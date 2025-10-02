@@ -1,0 +1,505 @@
+using Api.Helpers;
+using Application.DTOs;
+using Application.DTOs.ExternalData;
+using Application.Interfaces.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using ValidationResult = Application.DTOs.ExternalData.ValidationResult;
+
+namespace Api.Controllers.v1;
+
+/// <summary>
+/// API Controller สำหรับจัดการข้อมูล Alumni จากระบบภายนอก
+/// </summary>
+[ApiController]
+[Route("api/v{version:apiVersion}/external-data")]
+[ApiVersion("1.0")]
+[Authorize(Roles = "Admin,SystemIntegrator")]
+[Produces("application/json")]
+public class ExternalDataController : ControllerBase
+{
+    private readonly IExternalDataIntegrationService _integrationService;
+    private readonly ILogger<ExternalDataController> _logger;
+
+    public ExternalDataController(
+        IExternalDataIntegrationService integrationService,
+        ILogger<ExternalDataController> logger)
+    {
+        _integrationService = integrationService;
+        _logger = logger;
+    }
+
+    #region Bulk Import Operations
+
+    /// <summary>
+    /// นำเข้าข้อมูล Alumni จากระบบภายนอกแบบ Bulk Import
+    /// </summary>
+    /// <param name="request">ข้อมูล Alumni ที่ต้องการนำเข้า</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ผลลัพธ์การนำเข้าข้อมูล</returns>
+    [HttpPost("bulk-import")]
+    [ProducesResponseType(typeof(ApiResponseDto<ImportResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> BulkImport(
+        [FromBody] BulkImportRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogInformation("Starting bulk import for {Count} records from system {SystemId}", 
+                request.Alumni?.Count ?? 0, request.ExternalSystemId);
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("Invalid request data", ModelState));
+            }
+
+            if (request.Alumni == null || !request.Alumni.Any())
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("No alumni data provided"));
+            }
+
+            var result = await _integrationService.ProcessBulkDataAsync(request, cancellationToken);
+
+            if (result.FailedImports == 0)
+            {
+                return Ok(ApiResponseDto<ImportResult>.Success(result, "Bulk import completed successfully"));
+            }
+
+            // Partial success - some records failed
+            var message = $"Bulk import completed with {result.FailedImports} failed records";
+            return Ok(ApiResponseDto<ImportResult>.Success(result, message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during bulk import for system {SystemId}", request.ExternalSystemId);
+            return StatusCode(500, ApiResponseDto<object>.Failure("Internal server error during bulk import"));
+        }
+    }
+
+    /// <summary>
+    /// ตรวจสอบข้อมูล Alumni ก่อนนำเข้าจริง (Validation Only)
+    /// </summary>
+    /// <param name="request">ข้อมูล Alumni ที่ต้องการตรวจสอบ</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ผลลัพธ์การตรวจสอบข้อมูล</returns>
+    [HttpPost("validate")]
+    [ProducesResponseType(typeof(ApiResponseDto<ValidationResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ValidateData(
+        [FromBody] BulkImportRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("Invalid request data", ModelState));
+            }
+
+            if (request.Alumni == null || !request.Alumni.Any())
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("No alumni data provided"));
+            }
+
+            var result = await _integrationService.ValidateDataAsync(
+                request.Alumni, request.ExternalSystemId, cancellationToken);
+
+            var message = result.IsValid ? "All data is valid" : 
+                $"Validation found {result.InvalidRecords} invalid records";
+
+            return Ok(ApiResponseDto<ValidationResult>.Success(result, message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during data validation for system {SystemId}", request.ExternalSystemId);
+            return StatusCode(500, ApiResponseDto<object>.Failure("Internal server error during validation"));
+        }
+    }
+
+    /// <summary>
+    /// นำเข้าข้อมูลแบบ Batch (สำหรับข้อมูลขนาดใหญ่)
+    /// </summary>
+    /// <param name="data">ข้อมูล Alumni</param>
+    /// <param name="externalSystemId">รหัสระบบภายนอก</param>
+    /// <param name="batchSize">ขนาด Batch (ค่าเริ่มต้น 100)</param>
+    /// <param name="overwriteExisting">อัพเดทข้อมูลที่มีอยู่แล้วหรือไม่</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ผลลัพธ์การนำเข้าข้อมูล</returns>
+    [HttpPost("batch-import")]
+    [ProducesResponseType(typeof(ApiResponseDto<ImportResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> BatchImport(
+        [FromBody] List<ExternalAlumniData> data,
+        [FromQuery] [Required] string externalSystemId,
+        [FromQuery] int batchSize = 100,
+        [FromQuery] bool overwriteExisting = false,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("Invalid request parameters"));
+            }
+
+            if (!data.Any())
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("No alumni data provided"));
+            }
+
+            if (batchSize <= 0 || batchSize > 1000)
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("Batch size must be between 1 and 1000"));
+            }
+
+            var result = await _integrationService.ProcessBatchDataAsync(
+                data, externalSystemId, batchSize, overwriteExisting, cancellationToken);
+
+            var message = result.FailedImports == 0 ? 
+                "Batch import completed successfully" :
+                $"Batch import completed with {result.FailedImports} failed records";
+
+            return Ok(ApiResponseDto<ImportResult>.Success(result, message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during batch import for system {SystemId}", externalSystemId);
+            return StatusCode(500, ApiResponseDto<object>.Failure("Internal server error during batch import"));
+        }
+    }
+
+    #endregion
+
+    #region Single Record Operations
+
+    /// <summary>
+    /// ซิงค์ข้อมูล Alumni รายคนจากระบบภายนอก
+    /// </summary>
+    /// <param name="data">ข้อมูล Alumni</param>
+    /// <param name="externalSystemId">รหัสระบบภายนอก</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ผลลัพธ์การซิงค์ข้อมูล</returns>
+    [HttpPost("sync-single")]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SyncSingle(
+        [FromBody] ExternalAlumniData data,
+        [FromQuery] [Required] string externalSystemId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("Invalid request data"));
+            }
+
+            var result = await _integrationService.SyncSingleRecordAsync(
+                data, externalSystemId, cancellationToken);
+
+            var message = result ? "Record synced successfully" : "Failed to sync record";
+            
+            return Ok(ApiResponseDto<bool>.Success(result, message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error syncing single record for member {MemberID}", data.MemberID);
+            return StatusCode(500, ApiResponseDto<object>.Failure("Internal server error during sync"));
+        }
+    }
+
+    /// <summary>
+    /// อัพเดทข้อมูล Alumni รายคนจากระบบภายนอก
+    /// </summary>
+    /// <param name="memberID">รหัสสมาชิกจากระบบภายนอก</param>
+    /// <param name="data">ข้อมูลที่ต้องการอัพเดท</param>
+    /// <param name="externalSystemId">รหัสระบบภายนอก</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ผลลัพธ์การอัพเดทข้อมูล</returns>
+    [HttpPut("update/{memberID}")]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateSingle(
+        [FromRoute] [Required] string memberID,
+        [FromBody] ExternalAlumniData data,
+        [FromQuery] [Required] string externalSystemId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("Invalid request data"));
+            }
+
+            var result = await _integrationService.UpdateSingleRecordAsync(
+                memberID, data, externalSystemId, cancellationToken);
+
+            if (!result)
+            {
+                return NotFound(ApiResponseDto<object>.Failure($"Member {memberID} not found or update failed"));
+            }
+
+            return Ok(ApiResponseDto<bool>.Success(result, "Record updated successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating single record for member {MemberID}", memberID);
+            return StatusCode(500, ApiResponseDto<object>.Failure("Internal server error during update"));
+        }
+    }
+
+    #endregion
+
+    #region CSV File Upload
+
+    /// <summary>
+    /// นำเข้าข้อมูล Alumni จากไฟล์ CSV
+    /// </summary>
+    /// <param name="file">ไฟล์ CSV</param>
+    /// <param name="externalSystemId">รหัสระบบภายนอก</param>
+    /// <param name="hasHeader">ไฟล์มี Header หรือไม่ (ค่าเริ่มต้น true)</param>
+    /// <param name="delimiter">ตัวแบ่งคอลัมน์ (ค่าเริ่มต้น comma)</param>
+    /// <param name="overwriteExisting">อัพเดทข้อมูลที่มีอยู่แล้วหรือไม่</param>
+    /// <param name="validateOnly">ตรวจสอบข้อมูลเท่านั้น ไม่นำเข้าจริง</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ผลลัพธ์การนำเข้าข้อมูล</returns>
+    [HttpPost("upload-csv")]
+    [ProducesResponseType(typeof(ApiResponseDto<ImportResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    [RequestSizeLimit(50 * 1024 * 1024)] // 50MB limit
+    public async Task<IActionResult> UploadCsv(
+        IFormFile file,
+        [FromQuery] [Required] string externalSystemId,
+        [FromQuery] bool hasHeader = true,
+        [FromQuery] string delimiter = ",",
+        [FromQuery] bool overwriteExisting = false,
+        [FromQuery] bool validateOnly = false,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("No file uploaded"));
+            }
+
+            if (!file.ContentType.Contains("csv") && !file.ContentType.Contains("text"))
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("Invalid file format. Only CSV files are supported"));
+            }
+
+            if (file.Length > 50 * 1024 * 1024) // 50MB
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("File size too large. Maximum size is 50MB"));
+            }
+
+            // Parse CSV file
+            var alumniData = await ParseCsvFileAsync(file, hasHeader, delimiter, cancellationToken);
+            
+            if (!alumniData.Any())
+            {
+                return BadRequest(ApiResponseDto<object>.Failure("No valid data found in CSV file"));
+            }
+
+            // Create bulk import request
+            var request = new BulkImportRequest
+            {
+                Alumni = alumniData,
+                ExternalSystemId = externalSystemId,
+                OverwriteExisting = overwriteExisting,
+                ValidateOnly = validateOnly,
+                BatchSize = 100
+            };
+
+            var result = await _integrationService.ProcessBulkDataAsync(request, cancellationToken);
+            
+            var message = validateOnly ? "CSV validation completed" : 
+                result.FailedImports == 0 ? "CSV import completed successfully" :
+                $"CSV import completed with {result.FailedImports} failed records";
+
+            return Ok(ApiResponseDto<ImportResult>.Success(result, message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing CSV upload for system {SystemId}", externalSystemId);
+            return StatusCode(500, ApiResponseDto<object>.Failure("Internal server error during CSV processing"));
+        }
+    }
+
+    #endregion
+
+    #region Statistics and Monitoring
+
+    /// <summary>
+    /// ดึงสถิติการนำเข้าข้อมูล
+    /// </summary>
+    /// <param name="externalSystemId">รหัสระบบภายนอก (ไม่บังคับ)</param>
+    /// <param name="fromDate">วันที่เริ่มต้น (ไม่บังคับ)</param>
+    /// <param name="toDate">วันที่สิ้นสุด (ไม่บังคับ)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>สถิติการนำเข้าข้อมูล</returns>
+    [HttpGet("statistics")]
+    [ProducesResponseType(typeof(ApiResponseDto<ImportStatistics>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetStatistics(
+        [FromQuery] string? externalSystemId = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var statistics = await _integrationService.GetImportStatisticsAsync(
+                externalSystemId, fromDate, toDate, cancellationToken);
+
+            return Ok(ApiResponseDto<ImportStatistics>.Success(statistics, "Statistics retrieved successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving import statistics");
+            return StatusCode(500, ApiResponseDto<object>.Failure("Internal server error retrieving statistics"));
+        }
+    }
+
+    /// <summary>
+    /// ดึงรายชื่อผู้ใช้ที่ต้องการการซิงค์ข้อมูล
+    /// </summary>
+    /// <param name="externalSystemId">รหัสระบบภายนอก (ไม่บังคับ)</param>
+    /// <param name="olderThanHours">ข้อมูลที่เก่ากว่ากี่ชั่วโมง (ค่าเริ่มต้น 24)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>รายชื่อผู้ใช้ที่ต้องการซิงค์</returns>
+    [HttpGet("needs-sync")]
+    [ProducesResponseType(typeof(ApiResponseDto<List<UserSyncInfo>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUsersNeedingSync(
+        [FromQuery] string? externalSystemId = null,
+        [FromQuery] int olderThanHours = 24,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var users = await _integrationService.GetUsersNeedingSyncAsync(
+                externalSystemId, olderThanHours, cancellationToken);
+
+            var syncInfo = users.Select(u => new UserSyncInfo
+            {
+                UserId = u.Id,
+                ExternalMemberID = u.ExternalMemberID,
+                MobilePhone = u.MobilePhone,
+                Name = u.Name,
+                LastSyncDate = u.ExternalDataLastSync
+            }).ToList();
+
+            return Ok(ApiResponseDto<List<UserSyncInfo>>.Success(syncInfo, 
+                $"Found {syncInfo.Count} users needing sync"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving users needing sync");
+            return StatusCode(500, ApiResponseDto<object>.Failure("Internal server error retrieving sync list"));
+        }
+    }
+
+    #endregion
+
+    #region Private Helper Methods
+
+    private async Task<List<ExternalAlumniData>> ParseCsvFileAsync(
+        IFormFile file, 
+        bool hasHeader, 
+        string delimiter, 
+        CancellationToken cancellationToken)
+    {
+        var result = new List<ExternalAlumniData>();
+
+        using var reader = new StreamReader(file.OpenReadStream());
+        var csvContent = await reader.ReadToEndAsync(cancellationToken);
+        var lines = csvContent.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        var startIndex = hasHeader ? 1 : 0;
+        
+        for (int i = startIndex; i < lines.Length; i++)
+        {
+            try
+            {
+                var alumniData = ParseCsvLine(lines[i], delimiter);
+                if (alumniData != null)
+                {
+                    result.Add(alumniData);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error parsing CSV line {LineNumber}: {Line}", i + 1, lines[i]);
+                // Continue processing other lines
+            }
+        }
+
+        return result;
+    }
+
+    private ExternalAlumniData? ParseCsvLine(string line, string delimiter)
+    {
+        var fields = line.Split(delimiter.ToCharArray(), StringSplitOptions.None)
+                        .Select(f => f.Trim(' ', '"', '\r', '\n'))
+                        .ToArray();
+
+        if (fields.Length < 3) // Minimum required fields
+        {
+            return null;
+        }
+
+        // Map CSV fields to ExternalAlumniData (adjust based on CSV format)
+        var alumniData = new ExternalAlumniData
+        {
+            MemberID = GetField(fields, 0),
+            NameInYearbook = GetField(fields, 1),
+            Firstname = GetField(fields, 2),
+            Lastname = GetField(fields, 3),
+            MobilePhone = GetField(fields, 4),
+            Email = GetField(fields, 5),
+            GraduationYear = ParseIntField(GetField(fields, 6)),
+            Major = GetField(fields, 7),
+            // Add more field mappings as needed
+        };
+
+        return alumniData;
+    }
+
+    private static string? GetField(string[] fields, int index)
+    {
+        return index < fields.Length ? 
+            string.IsNullOrWhiteSpace(fields[index]) ? null : fields[index] : 
+            null;
+    }
+
+    private static int? ParseIntField(string? field)
+    {
+        return int.TryParse(field, out var result) ? result : null;
+    }
+
+    #endregion
+}
+
+#region Response DTOs
+
+/// <summary>
+/// DTO สำหรับข้อมูลผู้ใช้ที่ต้องการซิงค์
+/// </summary>
+public class UserSyncInfo
+{
+    public int UserId { get; set; }
+    public string ExternalMemberID { get; set; } = string.Empty;
+    public string? MobilePhone { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public DateTime? LastSyncDate { get; set; }
+}
+
+#endregion

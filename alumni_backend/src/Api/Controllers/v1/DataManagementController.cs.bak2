@@ -1,0 +1,754 @@
+using Api.Helpers;
+using Application.DTOs;
+using Application.Interfaces.Repositories;
+using Domain.Entities;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
+
+namespace Api.Controllers.v1;
+
+/// <summary>
+/// API Controller สำหรับจัดการข้อมูล Alumni และ User ในระบบ
+/// </summary>
+[ApiController]
+[Route("api/v{version:apiVersion}/data-management")]
+[ApiVersion("1.0")]
+[Authorize(Roles = "Admin")]
+[Produces("application/json")]
+public class DataManagementController : ControllerBase
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IAlumniProfileRepository _profileRepository;
+    private readonly ILogger<DataManagementController> _logger;
+
+    public DataManagementController(
+        IUserRepository userRepository,
+        IAlumniProfileRepository profileRepository,
+        ILogger<DataManagementController> logger)
+    {
+        _userRepository = userRepository;
+        _profileRepository = profileRepository;
+        _logger = logger;
+    }
+
+    #region User Management
+
+    /// <summary>
+    /// ดึงข้อมูลผู้ใช้ทั้งหมดพร้อมการแบ่งหน้า
+    /// </summary>
+    /// <param name="page">หน้าที่ต้องการ (เริ่มต้น 1)</param>
+    /// <param name="pageSize">จำนวนรายการต่อหน้า (เริ่มต้น 20, สูงสุด 100)</param>
+    /// <param name="search">คำค้นหา (ชื่อ, อีเมล, เบอร์โทร)</param>
+    /// <param name="externalSystemId">กรองตามระบบภายนอก</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>รายการผู้ใช้</returns>
+    [HttpGet("users")]
+    [ProducesResponseType(typeof(ApiResponseDto<PagedResult<UserSummaryDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetUsers(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? externalSystemId = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+            var users = await _userRepository.GetAllPaginatedAsync(
+                page, pageSize, search, externalSystemId, cancellationToken);
+
+            var userSummaries = users.Items.Select(u => new UserSummaryDto
+            {
+                Id = u.Id,
+                Name = u.Name,
+                Email = u.Email,
+                MobilePhone = u.MobilePhone,
+                ExternalMemberID = u.ExternalMemberID,
+                ExternalSystemId = u.ExternalSystemId,
+                Role = u.Role.ToString(),
+                IsActive = u.IsActive,
+                CreatedAt = u.CreatedAt,
+                LastLoginAt = u.LastLoginAt,
+                ExternalDataLastSync = u.ExternalDataLastSync
+            }).ToList();
+
+            var result = new PagedResult<UserSummaryDto>
+            {
+                Items = userSummaries,
+                TotalItems = users.TotalItems,
+                Page = users.Page,
+                PageSize = users.PageSize,
+                TotalPages = users.TotalPages
+            };
+
+            return Ok(ApiResponseHelper.Success(result, 
+                $"Retrieved {userSummaries.Count} users"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving users");
+            return StatusCode(500, ApiResponseHelper.BadRequest("Internal server error retrieving users"));
+        }
+    }
+
+    /// <summary>
+    /// ดึงข้อมูลผู้ใช้รายคนพร้อม Alumni Profile
+    /// </summary>
+    /// <param name="userId">รหัสผู้ใช้</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ข้อมูลผู้ใช้และโปรไฟล์</returns>
+    [HttpGet("users/{userId}")]
+    [ProducesResponseType(typeof(ApiResponseDto<UserDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetUser(
+        [FromRoute] [Required] int userId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user == null)
+            {
+                return NotFound(ApiResponseHelper.BadRequest($"User {userId} not found"));
+            }
+
+            var profile = await _profileRepository.GetByUserIdAsync(userId, cancellationToken);
+
+            var userDetail = new UserDetailDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Email = user.Email,
+                MobilePhone = user.MobilePhone,
+                ExternalMemberID = user.ExternalMemberID,
+                ExternalSystemId = user.ExternalSystemId,
+                ProviderId = user.ProviderId,
+                Provider = user.Provider,
+                PictureUrl = user.PictureUrl,
+                Role = user.Role.ToString(),
+                IsActive = user.IsActive,
+                CreatedAt = user.CreatedAt,
+                LastLoginAt = user.LastLoginAt,
+                ExternalDataLastSync = user.ExternalDataLastSync,
+                AlumniProfile = profile != null ? MapToProfileDto(profile) : null
+            };
+
+            return Ok(ApiResponseHelper.Success(userDetail, "User retrieved successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving user {UserId}", userId);
+            return StatusCode(500, ApiResponseHelper.BadRequest("Internal server error retrieving user"));
+        }
+    }
+
+    /// <summary>
+    /// ค้นหาผู้ใช้ตาม External Member ID
+    /// </summary>
+    /// <param name="memberID">รหัสสมาชิกจากระบบภายนอก</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ข้อมูลผู้ใช้</returns>
+    [HttpGet("users/external/{memberID}")]
+    [ProducesResponseType(typeof(ApiResponseDto<UserDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetUserByExternalMemberID(
+        [FromRoute] [Required] string memberID,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var user = await _userRepository.GetByExternalMemberIDAsync(memberID, cancellationToken);
+            if (user == null)
+            {
+                return NotFound(ApiResponseHelper.BadRequest($"User with external member ID {memberID} not found"));
+            }
+
+            var profile = await _profileRepository.GetByUserIdAsync(user.Id, cancellationToken);
+
+            var userDetail = new UserDetailDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Email = user.Email,
+                MobilePhone = user.MobilePhone,
+                ExternalMemberID = user.ExternalMemberID,
+                ExternalSystemId = user.ExternalSystemId,
+                ProviderId = user.ProviderId,
+                Provider = user.Provider,
+                PictureUrl = user.PictureUrl,
+                Role = user.Role.ToString(),
+                IsActive = user.IsActive,
+                CreatedAt = user.CreatedAt,
+                LastLoginAt = user.LastLoginAt,
+                ExternalDataLastSync = user.ExternalDataLastSync,
+                AlumniProfile = profile != null ? MapToProfileDto(profile) : null
+            };
+
+            return Ok(ApiResponseHelper.Success(userDetail, "User retrieved successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving user by external member ID {MemberID}", memberID);
+            return StatusCode(500, ApiResponseHelper.BadRequest("Internal server error retrieving user"));
+        }
+    }
+
+    /// <summary>
+    /// ค้นหาผู้ใช้ตามเบอร์โทรศัพท์
+    /// </summary>
+    /// <param name="mobilePhone">เบอร์โทรศัพท์ (รูปแบบ normalized)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ข้อมูลผู้ใช้</returns>
+    [HttpGet("users/phone/{mobilePhone}")]
+    [ProducesResponseType(typeof(ApiResponseDto<UserDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetUserByMobilePhone(
+        [FromRoute] [Required] string mobilePhone,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var user = await _userRepository.GetByMobilePhoneAsync(mobilePhone, cancellationToken);
+            if (user == null)
+            {
+                return NotFound(ApiResponseHelper.BadRequest($"User with mobile phone {mobilePhone} not found"));
+            }
+
+            var profile = await _profileRepository.GetByUserIdAsync(user.Id, cancellationToken);
+
+            var userDetail = new UserDetailDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Email = user.Email,
+                MobilePhone = user.MobilePhone,
+                ExternalMemberID = user.ExternalMemberID,
+                ExternalSystemId = user.ExternalSystemId,
+                ProviderId = user.ProviderId,
+                Provider = user.Provider,
+                PictureUrl = user.PictureUrl,
+                Role = user.Role.ToString(),
+                IsActive = user.IsActive,
+                CreatedAt = user.CreatedAt,
+                LastLoginAt = user.LastLoginAt,
+                ExternalDataLastSync = user.ExternalDataLastSync,
+                AlumniProfile = profile != null ? MapToProfileDto(profile) : null
+            };
+
+            return Ok(ApiResponseHelper.Success(userDetail, "User retrieved successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving user by mobile phone {MobilePhone}", mobilePhone);
+            return StatusCode(500, ApiResponseHelper.BadRequest("Internal server error retrieving user"));
+        }
+    }
+
+    /// <summary>
+    /// อัพเดทสถานะการใช้งานของผู้ใช้
+    /// </summary>
+    /// <param name="userId">รหัสผู้ใช้</param>
+    /// <param name="isActive">สถานะการใช้งาน</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ผลลัพธ์การอัพเดท</returns>
+    [HttpPatch("users/{userId}/status")]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateUserStatus(
+        [FromRoute] [Required] int userId,
+        [FromBody] [Required] bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user == null)
+            {
+                return NotFound(ApiResponseHelper.BadRequest($"User {userId} not found"));
+            }
+
+            user.IsActive = isActive;
+            user.UpdateTimestamp();
+
+            await _userRepository.UpdateAsync(user, cancellationToken);
+            await _userRepository.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation("User {UserId} status updated to {IsActive}", userId, isActive);
+            
+            return Ok(ApiResponseHelper.Success(true, $"User status updated to {(isActive ? "active" : "inactive")}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating user {UserId} status", userId);
+            return StatusCode(500, ApiResponseHelper.BadRequest("Internal server error updating user status"));
+        }
+    }
+
+    /// <summary>
+    /// ลบผู้ใช้และข้อมูลที่เกี่ยวข้อง (Soft Delete)
+    /// </summary>
+    /// <param name="userId">รหัสผู้ใช้</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ผลลัพธ์การลบ</returns>
+    [HttpDelete("users/{userId}")]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteUser(
+        [FromRoute] [Required] int userId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            if (user == null)
+            {
+                return NotFound(ApiResponseHelper.BadRequest($"User {userId} not found"));
+            }
+
+            // Soft delete by deactivating the user
+            user.IsActive = false;
+            user.UpdateTimestamp();
+
+            await _userRepository.UpdateAsync(user, cancellationToken);
+            await _userRepository.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation("User {UserId} soft deleted", userId);
+            
+            return Ok(ApiResponseHelper.Success(true, "User deleted successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting user {UserId}", userId);
+            return StatusCode(500, ApiResponseHelper.BadRequest("Internal server error deleting user"));
+        }
+    }
+
+    #endregion
+
+    #region Alumni Profile Management
+
+    /// <summary>
+    /// ดึงข้อมูล Alumni Profile ทั้งหมดพร้อมการแบ่งหน้า
+    /// </summary>
+    /// <param name="page">หน้าที่ต้องการ (เริ่มต้น 1)</param>
+    /// <param name="pageSize">จำนวนรายการต่อหน้า (เริ่มต้น 20, สูงสุด 100)</param>
+    /// <param name="search">คำค้นหา</param>
+    /// <param name="graduationYear">ปีที่จบการศึกษา</param>
+    /// <param name="major">สาขาวิชา</param>
+    /// <param name="externalSystemId">ระบบภายนอก</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>รายการ Alumni Profile</returns>
+    [HttpGet("profiles")]
+    [ProducesResponseType(typeof(ApiResponseDto<PagedResult<AlumniProfileSummaryDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetProfiles(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] int? graduationYear = null,
+        [FromQuery] string? major = null,
+        [FromQuery] string? externalSystemId = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+            var profiles = await _profileRepository.GetAllPaginatedAsync(
+                page, pageSize, search, graduationYear, major, externalSystemId, cancellationToken);
+
+            var profileSummaries = profiles.Items.Select(p => new AlumniProfileSummaryDto
+            {
+                Id = p.Id,
+                UserId = p.UserId,
+                ExternalMemberID = p.ExternalMemberID,
+                NameInYearbook = p.NameInYearbook,
+                Firstname = p.Firstname,
+                Lastname = p.Lastname,
+                MobilePhone = p.MobilePhone,
+                Email = p.Email,
+                GraduationYear = p.GraduationYear,
+                Major = p.Major,
+                ClassName = p.ClassName,
+                CompanyName = p.CompanyName,
+                JobTitle = p.JobTitle,
+                ExternalSystemId = p.ExternalSystemId,
+                ExternalDataLastSync = p.ExternalDataLastSync,
+                CreatedAt = p.CreatedAt
+            }).ToList();
+
+            var result = new PagedResult<AlumniProfileSummaryDto>
+            {
+                Items = profileSummaries,
+                TotalItems = profiles.TotalItems,
+                Page = profiles.Page,
+                PageSize = profiles.PageSize,
+                TotalPages = profiles.TotalPages
+            };
+
+            return Ok(ApiResponseHelper.Success(result, 
+                $"Retrieved {profileSummaries.Count} profiles"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving alumni profiles");
+            return StatusCode(500, ApiResponseHelper.BadRequest("Internal server error retrieving profiles"));
+        }
+    }
+
+    /// <summary>
+    /// ดึงข้อมูล Alumni Profile รายคน
+    /// </summary>
+    /// <param name="profileId">รหัส Alumni Profile</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>ข้อมูล Alumni Profile</returns>
+    [HttpGet("profiles/{profileId}")]
+    [ProducesResponseType(typeof(ApiResponseDto<AlumniProfileDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetProfile(
+        [FromRoute] [Required] int profileId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var profile = await _profileRepository.GetByIdAsync(profileId, cancellationToken);
+            if (profile == null)
+            {
+                return NotFound(ApiResponseHelper.BadRequest($"Alumni profile {profileId} not found"));
+            }
+
+            var profileDetail = MapToProfileDetailDto(profile);
+
+            return Ok(ApiResponseHelper.Success(profileDetail, "Profile retrieved successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving alumni profile {ProfileId}", profileId);
+            return StatusCode(500, ApiResponseHelper.BadRequest("Internal server error retrieving profile"));
+        }
+    }
+
+    #endregion
+
+    #region Data Cleanup and Maintenance
+
+    /// <summary>
+    /// ทำความสะอาดข้อมูลที่ซ้ำซ้อน
+    /// </summary>
+    /// <param name="dryRun">ทดสอบเท่านั้น ไม่ทำการลบจริง</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>รายงานการทำความสะอาดข้อมูล</returns>
+    [HttpPost("cleanup/duplicates")]
+    [ProducesResponseType(typeof(ApiResponseDto<CleanupResult>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CleanupDuplicates(
+        [FromQuery] bool dryRun = true,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // TODO: Implement duplicate cleanup logic
+            await Task.Delay(100, cancellationToken);
+
+            var result = new CleanupResult
+            {
+                DryRun = dryRun,
+                DuplicateUsers = 0,
+                DuplicateProfiles = 0,
+                CleanedRecords = 0,
+                ProcessedAt = DateTime.UtcNow
+            };
+
+            var message = dryRun ? "Duplicate analysis completed (dry run)" : "Duplicate cleanup completed";
+            return Ok(ApiResponseHelper.Success(result, message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during duplicate cleanup");
+            return StatusCode(500, ApiResponseHelper.BadRequest("Internal server error during cleanup"));
+        }
+    }
+
+    /// <summary>
+    /// ซิงค์ข้อมูลที่ล้าสมัยจากระบบภายนอก
+    /// </summary>
+    /// <param name="externalSystemId">ระบบภายนอก (ไม่บังคับ)</param>
+    /// <param name="olderThanDays">ข้อมูลที่เก่ากว่ากี่วัน (ค่าเริ่มต้น 7)</param>
+    /// <param name="maxRecords">จำนวนสูงสุดที่จะซิงค์ (ค่าเริ่มต้น 100)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>รายงานการซิงค์ข้อมูล</returns>
+    [HttpPost("sync/outdated")]
+    [ProducesResponseType(typeof(ApiResponseDto<SyncResult>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SyncOutdatedData(
+        [FromQuery] string? externalSystemId = null,
+        [FromQuery] int olderThanDays = 7,
+        [FromQuery] int maxRecords = 100,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // TODO: Implement outdated data sync logic
+            await Task.Delay(100, cancellationToken);
+
+            var result = new SyncResult
+            {
+                ExternalSystemId = externalSystemId,
+                ProcessedRecords = 0,
+                UpdatedRecords = 0,
+                FailedRecords = 0,
+                ProcessedAt = DateTime.UtcNow
+            };
+
+            return Ok(ApiResponseHelper.Success(result, "Outdated data sync completed"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during outdated data sync");
+            return StatusCode(500, ApiResponseHelper.BadRequest("Internal server error during sync"));
+        }
+    }
+
+    #endregion
+
+    #region Private Helper Methods
+
+    private static AlumniProfileDto MapToProfileDto(AlumniProfile profile)
+    {
+        return new AlumniProfileDto
+        {
+            Id = profile.Id,
+            UserId = profile.UserId,
+            ExternalMemberID = profile.ExternalMemberID,
+            NameInYearbook = profile.NameInYearbook,
+            TitleCode = profile.TitleCode,
+            Firstname = profile.Firstname,
+            Lastname = profile.Lastname,
+            NickName = profile.NickName,
+            GroupCode = profile.GroupCode,
+            Phone = profile.Phone,
+            MobilePhone = profile.MobilePhone,
+            LineID = profile.LineID,
+            Facebook = profile.Facebook,
+            Email = profile.Email,
+            Address = profile.Address,
+            ZipCode = profile.ZipCode,
+            District = profile.District,
+            Province = profile.Province,
+            Country = profile.Country,
+            CompanyName = profile.CompanyName,
+            JobTitle = profile.JobTitle,
+            WorkAddress = profile.WorkAddress,
+            MaritalStatus = profile.MaritalStatus,
+            Status = profile.Status,
+            SpouseName = profile.SpouseName,
+            Comment = profile.Comment,
+            DateOfBirth = profile.DateOfBirth,
+            GraduationYear = profile.GraduationYear,
+            Major = profile.Major,
+            ClassName = profile.ClassName,
+            ExternalSystemId = profile.ExternalSystemId,
+            ExternalDataLastSync = profile.ExternalDataLastSync,
+            CreatedAt = profile.CreatedAt,
+            UpdatedAt = profile.UpdatedAt
+        };
+    }
+
+    private static AlumniProfileDetailDto MapToProfileDetailDto(AlumniProfile profile)
+    {
+        return new AlumniProfileDetailDto
+        {
+            Id = profile.Id,
+            UserId = profile.UserId,
+            ExternalMemberID = profile.ExternalMemberID,
+            NameInYearbook = profile.NameInYearbook,
+            TitleCode = profile.TitleCode,
+            Firstname = profile.Firstname,
+            Lastname = profile.Lastname,
+            NickName = profile.NickName,
+            GroupCode = profile.GroupCode,
+            Phone = profile.Phone,
+            MobilePhone = profile.MobilePhone,
+            LineID = profile.LineID,
+            Facebook = profile.Facebook,
+            Email = profile.Email,
+            Address = profile.Address,
+            ZipCode = profile.ZipCode,
+            District = profile.District,
+            Province = profile.Province,
+            Country = profile.Country,
+            CompanyName = profile.CompanyName,
+            JobTitle = profile.JobTitle,
+            WorkAddress = profile.WorkAddress,
+            MaritalStatus = profile.MaritalStatus,
+            Status = profile.Status,
+            SpouseName = profile.SpouseName,
+            Comment = profile.Comment,
+            DateOfBirth = profile.DateOfBirth,
+            GraduationYear = profile.GraduationYear,
+            Major = profile.Major,
+            ClassName = profile.ClassName,
+            ExternalSystemId = profile.ExternalSystemId,
+            ExternalDataLastSync = profile.ExternalDataLastSync,
+            CreatedAt = profile.CreatedAt,
+            UpdatedAt = profile.UpdatedAt
+        };
+    }
+
+    #endregion
+}
+
+#region Response DTOs
+
+/// <summary>
+/// DTO สำหรับข้อมูลสรุปผู้ใช้
+/// </summary>
+public class UserSummaryDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Email { get; set; }
+    public string MobilePhone { get; set; } = string.Empty;
+    public string? ExternalMemberID { get; set; }
+    public string? ExternalSystemId { get; set; }
+    public string Role { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? LastLoginAt { get; set; }
+    public DateTime? ExternalDataLastSync { get; set; }
+}
+
+/// <summary>
+/// DTO สำหรับข้อมูลรายละเอียดผู้ใช้
+/// </summary>
+public class UserDetailDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Email { get; set; }
+    public string MobilePhone { get; set; } = string.Empty;
+    public string? ExternalMemberID { get; set; }
+    public string? ExternalSystemId { get; set; }
+    public string? ProviderId { get; set; }
+    public string? Provider { get; set; }
+    public string? PictureUrl { get; set; }
+    public string Role { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? LastLoginAt { get; set; }
+    public DateTime? ExternalDataLastSync { get; set; }
+    public AlumniProfileDto? AlumniProfile { get; set; }
+}
+
+/// <summary>
+/// DTO สำหรับข้อมูล Alumni Profile
+/// </summary>
+public class AlumniProfileDto
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string? ExternalMemberID { get; set; }
+    public string? NameInYearbook { get; set; }
+    public string? TitleCode { get; set; }
+    public string? Firstname { get; set; }
+    public string? Lastname { get; set; }
+    public string? NickName { get; set; }
+    public string? GroupCode { get; set; }
+    public string? Phone { get; set; }
+    public string? MobilePhone { get; set; }
+    public string? LineID { get; set; }
+    public string? Facebook { get; set; }
+    public string? Email { get; set; }
+    public string? Address { get; set; }
+    public string? ZipCode { get; set; }
+    public string? District { get; set; }
+    public string? Province { get; set; }
+    public string? Country { get; set; }
+    public string? CompanyName { get; set; }
+    public string? JobTitle { get; set; }
+    public string? WorkAddress { get; set; }
+    public string? MaritalStatus { get; set; }
+    public string? Status { get; set; }
+    public string? SpouseName { get; set; }
+    public string? Comment { get; set; }
+    public DateTime? DateOfBirth { get; set; }
+    public int? GraduationYear { get; set; }
+    public string? Major { get; set; }
+    public string? ClassName { get; set; }
+    public string? ExternalSystemId { get; set; }
+    public DateTime? ExternalDataLastSync { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// DTO สำหรับข้อมูลสรุป Alumni Profile
+/// </summary>
+public class AlumniProfileSummaryDto
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string? ExternalMemberID { get; set; }
+    public string? NameInYearbook { get; set; }
+    public string? Firstname { get; set; }
+    public string? Lastname { get; set; }
+    public string? MobilePhone { get; set; }
+    public string? Email { get; set; }
+    public int? GraduationYear { get; set; }
+    public string? Major { get; set; }
+    public string? ClassName { get; set; }
+    public string? CompanyName { get; set; }
+    public string? JobTitle { get; set; }
+    public string? ExternalSystemId { get; set; }
+    public DateTime? ExternalDataLastSync { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// DTO สำหรับข้อมูลรายละเอียด Alumni Profile
+/// </summary>
+public class AlumniProfileDetailDto : AlumniProfileDto
+{
+    // Inherits all properties from AlumniProfileDto
+}
+
+/// <summary>
+/// DTO สำหรับผลลัพธ์การแบ่งหน้า
+/// </summary>
+public class PagedResult<T>
+{
+    public List<T> Items { get; set; } = new();
+    public int TotalItems { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages { get; set; }
+}
+
+/// <summary>
+/// DTO สำหรับผลลัพธ์การทำความสะอาดข้อมูล
+/// </summary>
+public class CleanupResult
+{
+    public bool DryRun { get; set; }
+    public int DuplicateUsers { get; set; }
+    public int DuplicateProfiles { get; set; }
+    public int CleanedRecords { get; set; }
+    public DateTime ProcessedAt { get; set; }
+}
+
+/// <summary>
+/// DTO สำหรับผลลัพธ์การซิงค์ข้อมูล
+/// </summary>
+public class SyncResult
+{
+    public string? ExternalSystemId { get; set; }
+    public int ProcessedRecords { get; set; }
+    public int UpdatedRecords { get; set; }
+    public int FailedRecords { get; set; }
+    public DateTime ProcessedAt { get; set; }
+}
+
+#endregion

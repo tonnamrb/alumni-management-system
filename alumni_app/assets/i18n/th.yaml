@@ -1,0 +1,46 @@
+app:
+  name: "แอปศิษย์เก่า"
+  
+splash:
+  loading: "กำลังโหลด..."
+
+auth:
+  login: "เข้าสู่ระบบ"
+  register: "สมัครสมาชิก"
+  email: "อีเมล"
+  password: "รหัสผ่าน"
+  login_button: "เข้าสู่ระบบ"
+  register_button: "สมัครสมาชิก"
+  welcome: "ยินดีต้อนรับสู่แอปศิษย์เก่า"
+
+bottom_nav:
+  feed: "ฟีด"
+  profile: "โปรไฟล์"
+
+feed:
+  title: "ฟีด"
+  like: "ถูกใจ"
+  comment: "คอมเมนต์"
+  upload: "อัปโหลด"
+  no_posts: "ยังไม่มีโพสต์"
+  loading: "กำลังโหลดโพสต์..."
+
+profile:
+  title: "โปรไฟล์"
+  posts: "โพสต์"
+  followers: "ผู้ติดตาม"
+  following: "กำลังติดตาม"
+  bio: "ประวัติย่อ"
+  settings: "การตั้งค่า"
+  gallery: "เลือกจากแกลเลอรี"
+  camera: "ถ่ายรูป"
+  remove_photo: "ลบรูปโปรไฟล์"
+  
+settings:
+  title: "การตั้งค่า"
+  dark_mode: "โหมดมืด"
+  language: "ภาษา"
+  
+languages:
+  thai: "ไทย"
+  english: "English"

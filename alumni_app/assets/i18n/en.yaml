@@ -1,0 +1,46 @@
+app:
+  name: "Alumni App"
+  
+splash:
+  loading: "Loading..."
+
+auth:
+  login: "Login"
+  register: "Register"
+  email: "Email"
+  password: "Password"
+  login_button: "Login"
+  register_button: "Register"
+  welcome: "Welcome to Alumni App"
+
+bottom_nav:
+  feed: "Feed"
+  profile: "Profile"
+
+feed:
+  title: "Feed"
+  like: "Like"
+  comment: "Comment"
+  upload: "Upload"
+  no_posts: "No posts yet"
+  loading: "Loading posts..."
+
+profile:
+  title: "Profile"
+  posts: "Posts"
+  followers: "Followers" 
+  following: "Following"
+  bio: "Bio"
+  settings: "Settings"
+  gallery: "Choose from Gallery"
+  camera: "Take Photo"
+  remove_photo: "Remove Photo"
+  
+settings:
+  title: "Settings"
+  dark_mode: "Dark Mode"
+  language: "Language"
+  
+languages:
+  thai: "ไทย"
+  english: "English"

@@ -1,0 +1,3 @@
+---
+applyTo: 'dart, flutter'
+---
