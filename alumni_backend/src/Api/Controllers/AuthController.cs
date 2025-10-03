@@ -41,6 +41,31 @@ public class AuthController : BaseController
     }
 
     /// <summary>
+    /// ตรวจสอบสถานะ authentication system
+    /// </summary>
+    [HttpGet("status")]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), 200)]
+    public ActionResult<ApiResponseDto<object>> GetAuthStatus()
+    {
+        var status = new
+        {
+            authenticationEnabled = true,
+            supportedMethods = new[] { "email_password", "mobile_phone" },
+            registrationOpen = true,
+            passwordRequirements = new
+            {
+                minLength = 8,
+                requireUppercase = true,
+                requireLowercase = true,
+                requireNumbers = true,
+                requireSpecialCharacters = true
+            }
+        };
+
+        return Ok(SuccessResponse(status, "Authentication system status"));
+    }
+
+    /// <summary>
     /// เข้าสู่ระบบ
     /// </summary>
     /// <param name="loginDto">ข้อมูลสำหรับเข้าสู่ระบบ</param>
@@ -265,44 +290,14 @@ public class AuthController : BaseController
     /// <param name="request">ข้อมูลสำหรับลงทะเบียน</param>
     /// <returns>ข้อมูลผู้ใช้งานที่สร้างขึ้น</returns>
     [HttpPost("register/mobile")]
-    [ProducesResponseType(typeof(ApiResponseDto<UserDto>), 200)]
     [ProducesResponseType(typeof(ApiResponseDto<object>), 400)]
-    public async Task<ActionResult<ApiResponseDto<UserDto>>> RegisterWithMobile([FromBody] MobileRegisterRequest request)
+    public Task<ActionResult<ApiResponseDto<object>>> RegisterWithMobile([FromBody] MobileRegisterRequest request)
     {
-        try
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ErrorResponse<object>("ข้อมูลไม่ถูกต้อง"));
-            }
-
-            var user = await _authService.RegisterWithMobilePhoneAsync(request.MobilePhone, request.Name, request.Password, request.Email);
-            
-            // Map to DTO (you may need to create this mapping)
-            var userDto = new UserDto
-            {
-                Id = user.Id,
-                Name = user.Name,
-                Email = user.Email,
-                MobilePhone = user.MobilePhone,
-                Role = user.Role.ToString(),
-                IsActive = user.IsActive,
-                CreatedAt = user.CreatedAt
-            };
-
-            _logger.LogInformation("Successful mobile registration for phone: {MobilePhone}", request.MobilePhone);
-            return Ok(SuccessResponse(userDto, "ลงทะเบียนสำเร็จ"));
-        }
-        catch (InvalidOperationException ex)
-        {
-            _logger.LogWarning("Mobile registration failed: {Error}", ex.Message);
-            return BadRequest(ErrorResponse<object>(ex.Message));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during mobile registration for phone: {MobilePhone}", request.MobilePhone);
-            return BadRequest(ErrorResponse<object>("เกิดข้อผิดพลาดในการลงทะเบียน"));
-        }
+        // This legacy method is deprecated - should use the new OTP flow
+        var message = "วิธีลงทะเบียนนี้ไม่รองรับแล้ว กรุณาใช้ขั้นตอนใหม่: check-mobile -> request-registration-otp -> verify-registration-otp -> complete-registration";
+        return Task.FromResult<ActionResult<ApiResponseDto<object>>>(
+            BadRequest(ErrorResponse<object>(message))
+        );
     }
 
     /// <summary>
@@ -378,6 +373,167 @@ public class AuthController : BaseController
             return BadRequest(ErrorResponse<object>("เกิดข้อผิดพลาดในการตรวจสอบรหัส OTP"));
         }
     }
+
+    #region New Registration Flow with OTP
+
+    /// <summary>
+    /// ตรวจสอบว่าหมายเลขโทรศัพท์สามารถลงทะเบียนได้หรือไม่
+    /// </summary>
+    /// <param name="request">ข้อมูลหมายเลขโทรศัพท์</param>
+    /// <returns>ผลการตรวจสอบ</returns>
+    [HttpPost("check-mobile")]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), 200)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), 400)]
+    public async Task<ActionResult<ApiResponseDto<bool>>> CheckMobilePhone([FromBody] CheckMobileRequest request)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ErrorResponse<object>("ข้อมูลไม่ถูกต้อง"));
+            }
+
+            var canRegister = await _authService.CanRegisterWithMobilePhoneAsync(request.MobilePhone);
+            
+            if (canRegister)
+            {
+                _logger.LogInformation("Mobile phone can register: {MobilePhone}", request.MobilePhone);
+                return Ok(SuccessResponse(true, "เบอร์โทรศัพท์สามารถลงทะเบียนได้"));
+            }
+            else
+            {
+                _logger.LogInformation("Mobile phone cannot register: {MobilePhone}", request.MobilePhone);
+                return Ok(SuccessResponse(false, "เบอร์โทรศัพท์นี้ไม่สามารถลงทะเบียนได้ หรือได้ลงทะเบียนแล้ว"));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking mobile phone: {MobilePhone}", request.MobilePhone);
+            return BadRequest(ErrorResponse<object>("เกิดข้อผิดพลาดในการตรวจสอบเบอร์โทรศัพท์"));
+        }
+    }
+
+    /// <summary>
+    /// ขอรหัส OTP สำหรับการลงทะเบียน
+    /// </summary>
+    /// <param name="request">ข้อมูลการขอ OTP</param>
+    /// <returns>ผลการส่ง OTP</returns>
+    [HttpPost("request-registration-otp")]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), 200)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), 400)]
+    public async Task<ActionResult<ApiResponseDto<bool>>> RequestRegistrationOtp([FromBody] RequestOtpRequest request)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ErrorResponse<object>("ข้อมูลไม่ถูกต้อง"));
+            }
+
+            await _authService.RequestRegistrationOtpAsync(request.MobilePhone);
+            
+            _logger.LogInformation("Registration OTP requested for phone: {MobilePhone}", request.MobilePhone);
+            return Ok(SuccessResponse(true, "ส่งรหัส OTP เรียบร้อยแล้ว กรุณาตรวจสอบข้อความ"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("Registration OTP request failed: {Error}", ex.Message);
+            return BadRequest(ErrorResponse<object>(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error requesting registration OTP for phone: {MobilePhone}", request.MobilePhone);
+            return BadRequest(ErrorResponse<object>("เกิดข้อผิดพลาดในการส่งรหัส OTP"));
+        }
+    }
+
+    /// <summary>
+    /// ยืนยันรหัส OTP สำหรับการลงทะเบียน
+    /// </summary>
+    /// <param name="request">ข้อมูลการยืนยัน OTP</param>
+    /// <returns>ผลการยืนยัน OTP</returns>
+    [HttpPost("verify-registration-otp")]
+    [ProducesResponseType(typeof(ApiResponseDto<bool>), 200)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), 400)]
+    public async Task<ActionResult<ApiResponseDto<bool>>> VerifyRegistrationOtp([FromBody] OtpVerificationRequest request)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ErrorResponse<object>("ข้อมูลไม่ถูกต้อง"));
+            }
+
+            var isValid = await _authService.VerifyRegistrationOtpAsync(request.MobilePhone, request.OtpCode);
+            
+            if (isValid)
+            {
+                _logger.LogInformation("Registration OTP verified successfully for phone: {MobilePhone}", request.MobilePhone);
+                return Ok(SuccessResponse(true, "ยืนยันรหัส OTP สำเร็จ กรุณาตั้งรหัสผ่าน"));
+            }
+            else
+            {
+                _logger.LogWarning("Invalid registration OTP for phone: {MobilePhone}", request.MobilePhone);
+                return BadRequest(ErrorResponse<object>("รหัส OTP ไม่ถูกต้องหรือหมดอายุ"));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error verifying registration OTP for phone: {MobilePhone}", request.MobilePhone);
+            return BadRequest(ErrorResponse<object>("เกิดข้อผิดพลาดในการยืนยันรหัส OTP"));
+        }
+    }
+
+    /// <summary>
+    /// เสร็จสิ้นการลงทะเบียนโดยการตั้งรหัสผ่าน
+    /// </summary>
+    /// <param name="request">ข้อมูลการตั้งรหัสผ่าน</param>
+    /// <returns>ข้อมูลผู้ใช้งานที่ลงทะเบียนเสร็จ</returns>
+    [HttpPost("complete-registration")]
+    [ProducesResponseType(typeof(ApiResponseDto<UserDto>), 200)]
+    [ProducesResponseType(typeof(ApiResponseDto<object>), 400)]
+    public async Task<ActionResult<ApiResponseDto<UserDto>>> CompleteRegistration([FromBody] CompleteRegistrationRequest request)
+    {
+        try
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ErrorResponse<object>("ข้อมูลไม่ถูกต้อง"));
+            }
+
+            var user = await _authService.CompleteRegistrationAsync(request.MobilePhone, request.Password);
+            
+            // Map to DTO
+            var userDto = new UserDto
+            {
+                Id = user.Id,
+                Email = user.Email,
+                Firstname = user.Firstname,
+                Lastname = user.Lastname,
+                FullName = user.FullName,
+                MobilePhone = user.MobilePhone,
+                RoleId = user.RoleId,
+                RoleName = user.Role?.Name ?? "Unknown",
+                CreatedAt = user.CreatedAt
+            };
+
+            _logger.LogInformation("Registration completed for phone: {MobilePhone}, UserId: {UserId}", 
+                request.MobilePhone, user.Id);
+            return Ok(SuccessResponse(userDto, "ลงทะเบียนสำเร็จ"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("Registration completion failed: {Error}", ex.Message);
+            return BadRequest(ErrorResponse<object>(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error completing registration for phone: {MobilePhone}", request.MobilePhone);
+            return BadRequest(ErrorResponse<object>("เกิดข้อผิดพลาดในการลงทะเบียน"));
+        }
+    }
+
+    #endregion
 
     #endregion
 }

@@ -1,3 +1,3 @@
 ---
-applyTo: 'dart, flutter'
+applyTo: '**/*.dart, **/*.flutter'
 ---

@@ -36,7 +36,9 @@ class ProfilePage extends GetView<ProfileController> {
                           radius: 50,
                           backgroundColor: Theme.of(context).colorScheme.primary,
                           child: Text(
-                            controller.userName[0].toUpperCase(),
+                            controller.userName.isNotEmpty 
+                                ? controller.userName[0].toUpperCase()
+                                : 'U',
                             style: const TextStyle(
                               fontSize: 32,
                               fontWeight: FontWeight.bold,

@@ -78,6 +78,29 @@ public static class PhoneNumberHelper
     }
     
     /// <summary>
+    /// Extracts the last 9 digits for phone number comparison
+    /// This handles cases where DB has mixed formats: +66xxxxxxxxx, 66xxxxxxxxx, 08xxxxxxxx, 09xxxxxxxx
+    /// </summary>
+    /// <param name="phoneNumber">Phone number in any format</param>
+    /// <returns>Last 9 digits for comparison</returns>
+    public static string GetLast9Digits(string phoneNumber)
+    {
+        if (string.IsNullOrWhiteSpace(phoneNumber))
+            return string.Empty;
+            
+        // Remove all non-digits
+        string digits = DigitsOnlyRegex.Replace(phoneNumber, "");
+        
+        // Get last 9 digits regardless of format
+        if (digits.Length >= 9)
+        {
+            return digits.Substring(digits.Length - 9);
+        }
+        
+        return digits;
+    }
+
+    /// <summary>
     /// Gets the mobile network operator based on the phone number prefix
     /// </summary>
     /// <param name="normalizedPhone">Normalized phone number</param>

@@ -21,8 +21,8 @@ public class AlumniProfileRepository : BaseRepository<AlumniProfile>, IAlumniPro
     {
         return await _dbSet
             .Include(p => p.User)
-            .Where(p => p.IsProfilePublic && p.User.IsActive)
-            .OrderBy(p => p.User.Name)
+            .Where(p => p.IsProfilePublic && true)
+            .OrderBy(p => p.User.FullName)
             .ToListAsync(cancellationToken);
     }
 
@@ -31,10 +31,10 @@ public class AlumniProfileRepository : BaseRepository<AlumniProfile>, IAlumniPro
         return await _dbSet
             .Include(p => p.User)
             .Where(p => p.IsProfilePublic && 
-                       p.User.IsActive && 
+                       true && 
                        p.Major != null && 
                        p.Major.ToLower().Contains(major.ToLower()))
-            .OrderBy(p => p.User.Name)
+            .OrderBy(p => p.User.FullName)
             .ToListAsync(cancellationToken);
     }
 
@@ -46,9 +46,9 @@ public class AlumniProfileRepository : BaseRepository<AlumniProfile>, IAlumniPro
             return await _dbSet
                 .Include(p => p.User)
                 .Where(p => p.IsProfilePublic && 
-                           p.User.IsActive && 
+                           true && 
                            p.GraduationYear == year)
-                .OrderBy(p => p.User.Name)
+                .OrderBy(p => p.User.FullName)
                 .ToListAsync(cancellationToken);
         }
         
@@ -60,10 +60,10 @@ public class AlumniProfileRepository : BaseRepository<AlumniProfile>, IAlumniPro
         return await _dbSet
             .Include(p => p.User)
             .Where(p => p.IsProfilePublic && 
-                       p.User.IsActive && 
+                       true && 
                        p.CurrentCompany != null && 
                        p.CurrentCompany.ToLower().Contains(company.ToLower()))
-            .OrderBy(p => p.User.Name)
+            .OrderBy(p => p.User.FullName)
             .ToListAsync(cancellationToken);
     }
 
@@ -96,7 +96,7 @@ public class AlumniProfileRepository : BaseRepository<AlumniProfile>, IAlumniPro
         return await _dbSet
             .Include(p => p.User)
             .Where(p => p.ExternalSystemId == systemId)
-            .OrderBy(p => p.User.Name)
+            .OrderBy(p => p.User.FullName)
             .ToListAsync(cancellationToken);
     }
 

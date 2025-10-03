@@ -239,7 +239,7 @@ public class CommentService : ICommentService
         {
             // Check if admin
             var admin = await _userRepository.GetByIdAsync(adminUserId);
-            if (admin?.Role != UserRole.Administrator)
+            if (admin?.RoleId != 2) // RoleId 2 = Administrator
                 throw new UnauthorizedAccessException("Only admins can delete comments");
 
             return await DeleteCommentAsync(commentId, adminUserId, isAdmin: true);

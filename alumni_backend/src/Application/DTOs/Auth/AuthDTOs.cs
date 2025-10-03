@@ -135,3 +135,55 @@ public class RequestOtpRequest
     [Required(ErrorMessage = "Purpose is required")]
     public string Purpose { get; set; } = "login";
 }
+
+/// <summary>
+/// Request model for checking if mobile phone can register
+/// </summary>
+public class CheckMobileRequest
+{
+    [Required(ErrorMessage = "Mobile phone number is required")]
+    [StringLength(15, ErrorMessage = "Mobile phone number must be between 8 and 15 characters", MinimumLength = 8)]
+    public string MobilePhone { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Validates the mobile phone format
+    /// </summary>
+    /// <returns>Validation result</returns>
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (!PhoneNumberHelper.IsValidThaiMobilePhone(MobilePhone))
+        {
+            yield return new ValidationResult(
+                "Invalid Thai mobile phone number format. Expected format: 06xxxxxxxx, 08xxxxxxxx, or 09xxxxxxxx",
+                new[] { nameof(MobilePhone) });
+        }
+    }
+}
+
+/// <summary>
+/// Request model for completing registration after OTP verification
+/// </summary>
+public class CompleteRegistrationRequest
+{
+    [Required(ErrorMessage = "Mobile phone number is required")]
+    [StringLength(15, ErrorMessage = "Mobile phone number must be between 8 and 15 characters", MinimumLength = 8)]
+    public string MobilePhone { get; set; } = string.Empty;
+    
+    [Required(ErrorMessage = "Password is required")]
+    [StringLength(100, ErrorMessage = "Password must be between 6 and 100 characters", MinimumLength = 6)]
+    public string Password { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Validates the mobile phone format
+    /// </summary>
+    /// <returns>Validation result</returns>
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (!PhoneNumberHelper.IsValidThaiMobilePhone(MobilePhone))
+        {
+            yield return new ValidationResult(
+                "Invalid Thai mobile phone number format. Expected format: 06xxxxxxxx, 08xxxxxxxx, or 09xxxxxxxx",
+                new[] { nameof(MobilePhone) });
+        }
+    }
+}

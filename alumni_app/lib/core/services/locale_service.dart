@@ -1,49 +1,22 @@
-import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:get/get.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class LocaleService extends GetxService {
-  static const String _localeKey = 'locale';
+  static LocaleService get to => Get.find();
   
-  late SharedPreferences _prefs;
-  final Rx<Locale> _currentLocale = const Locale('en', 'US').obs;
+  final _currentLocale = const Locale('th', 'TH').obs;
   
   Locale get currentLocale => _currentLocale.value;
   
-  // Supported locales
   static const List<Locale> supportedLocales = [
-    Locale('en', 'US'),
     Locale('th', 'TH'),
+    Locale('en', 'US'),
   ];
   
-  @override
-  Future<void> onInit() async {
-    super.onInit();
-    _prefs = await SharedPreferences.getInstance();
-    _loadLocale();
-  }
-  
-  void _loadLocale() {
-    final localeCode = _prefs.getString(_localeKey) ?? 'en';
-    _currentLocale.value = Locale(localeCode);
-  }
-  
-  Future<void> changeLocale(String localeCode) async {
-    final locale = Locale(localeCode);
-    _currentLocale.value = locale;
-    await _prefs.setString(_localeKey, localeCode);
-    
-    // Update GetX locale
-    Get.updateLocale(locale);
-  }
-  
-  String getLanguageName(String localeCode) {
-    switch (localeCode) {
-      case 'th':
-        return 'ไทย';
-      case 'en':
-      default:
-        return 'English';
+  void changeLocale(Locale locale) {
+    if (supportedLocales.contains(locale)) {
+      _currentLocale.value = locale;
+      Get.updateLocale(locale);
     }
   }
 }

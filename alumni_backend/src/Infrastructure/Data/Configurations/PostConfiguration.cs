@@ -14,16 +14,27 @@ public class PostConfiguration : IEntityTypeConfiguration<Post>
             .IsRequired()
             .HasMaxLength(2000);
 
+        builder.Property(x => x.Type)
+            .HasConversion<int>()
+            .IsRequired();
+
         builder.Property(x => x.ImageUrl)
             .HasMaxLength(500);
+
+        builder.Property(x => x.MediaUrls)
+            .HasMaxLength(2000); // JSON array of media URLs
 
         // Indexes for performance (feed queries)
         builder.HasIndex(x => x.CreatedAt);
         builder.HasIndex(x => x.IsPinned);
         builder.HasIndex(x => x.UserId);
+        builder.HasIndex(x => x.Type);
 
         // Composite index for feed ordering (pinned posts first, then by date)
         builder.HasIndex(x => new { x.IsPinned, x.CreatedAt });
+        
+        // Composite index for filtering by type and date
+        builder.HasIndex(x => new { x.Type, x.CreatedAt });
 
         // Configure relationships
         builder.HasMany(x => x.Comments)

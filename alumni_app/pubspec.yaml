@@ -55,6 +55,19 @@ dependencies:
   # Image handling
   image_picker: ^1.0.4
   cached_network_image: ^3.3.0
+  
+  # App info
+  package_info_plus: ^8.0.0
+  
+  # OTP input
+  pinput: ^3.0.1
+  
+  # Result handling
+  result_dart: ^1.1.0
+  
+  # UI Components
+  shimmer: ^3.0.0
+  pull_to_refresh: ^2.0.0
 
 dev_dependencies:
   flutter_test:

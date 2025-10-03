@@ -269,7 +269,7 @@ class _SettingsBottomSheet extends StatelessWidget {
             title: const Text('Dark Mode'),
             trailing: Switch(
               value: themeService.isDarkMode,
-              onChanged: (_) => themeService.toggleTheme(),
+              onChanged: (_) => themeService.switchTheme(),
             ),
             contentPadding: EdgeInsets.zero,
           )),
@@ -293,7 +293,7 @@ class _SettingsBottomSheet extends StatelessWidget {
               ],
               onChanged: (String? value) {
                 if (value != null) {
-                  localeService.changeLocale(value);
+                  localeService.changeLocale(value == 'th' ? const Locale('th', 'TH') : const Locale('en', 'US'));
                 }
               },
             )),

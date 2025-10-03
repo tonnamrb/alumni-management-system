@@ -30,14 +30,14 @@ public class PostService : IPostService
         _logger = logger;
     }
 
-    public async Task<PostListDto> GetPostsAsync(int page = 1, int pageSize = 10, int? currentUserId = null)
+    public async Task<PostListDto> GetPostsAsync(int page = 1, int pageSize = 10, int? currentUserId = null, PostType? type = null)
     {
         try
         {
-            // Get pinned posts first, then regular posts
-            var pinnedPosts = await _postRepository.GetPinnedPostsAsync();
-            var regularPosts = await _postRepository.GetPostsWithUserAndLikesAsync(page, pageSize);
-            var totalCount = await _postRepository.GetPostsCountAsync();
+            // Get pinned posts first, then regular posts (filtered by type if specified)
+            var pinnedPosts = await _postRepository.GetPinnedPostsAsync(type);
+            var regularPosts = await _postRepository.GetPostsWithUserAndLikesAsync(page, pageSize, type);
+            var totalCount = await _postRepository.GetPostsCountAsync(type);
 
             var allPosts = new List<Post>();
             
@@ -102,9 +102,19 @@ public class PostService : IPostService
             {
                 UserId = userId,
                 Content = createPostDto.Content.Trim(),
-                ImageUrl = createPostDto.ImageUrl?.Trim(),
+                Type = createPostDto.Type,
                 CreatedAt = DateTime.UtcNow
             };
+
+            // Handle media URLs based on type and count
+            if (createPostDto.MediaUrls?.Count > 0)
+            {
+                post.AttachMultipleMedia(createPostDto.MediaUrls, createPostDto.Type);
+            }
+            else if (!string.IsNullOrEmpty(createPostDto.ImageUrl))
+            {
+                post.AttachImage(createPostDto.ImageUrl.Trim());
+            }
 
             var createdPost = await _postRepository.AddAsync(post);
             await _postRepository.SaveChangesAsync();
@@ -132,11 +142,21 @@ public class PostService : IPostService
                 throw new UnauthorizedAccessException("You can only update your own posts");
 
             post.UpdateContent(updatePostDto.Content.Trim());
+            post.Type = updatePostDto.Type;
             
-            if (!string.IsNullOrEmpty(updatePostDto.ImageUrl))
+            // Handle media updates
+            if (updatePostDto.MediaUrls?.Count > 0)
+            {
+                post.AttachMultipleMedia(updatePostDto.MediaUrls, updatePostDto.Type);
+            }
+            else if (!string.IsNullOrEmpty(updatePostDto.ImageUrl))
+            {
                 post.AttachImage(updatePostDto.ImageUrl.Trim());
-            else if (string.IsNullOrEmpty(updatePostDto.ImageUrl) && !string.IsNullOrEmpty(post.ImageUrl))
+            }
+            else
+            {
                 post.RemoveImage();
+            }
 
             await _postRepository.UpdateAsync(post);
             await _postRepository.SaveChangesAsync();
@@ -232,7 +252,7 @@ public class PostService : IPostService
         {
             // Check if admin
             var admin = await _userRepository.GetByIdAsync(adminUserId);
-            if (admin?.Role != UserRole.Administrator)
+            if (admin?.RoleId != 2) // RoleId 2 = Administrator
                 throw new UnauthorizedAccessException("Only admins can pin posts");
 
             var post = await _postRepository.GetByIdAsync(postId);
@@ -268,7 +288,7 @@ public class PostService : IPostService
         {
             // Check if admin
             var admin = await _userRepository.GetByIdAsync(adminUserId);
-            if (admin?.Role != UserRole.Administrator)
+            if (admin?.RoleId != 2) // RoleId 2 = Administrator
                 throw new UnauthorizedAccessException("Only admins can unpin posts");
 
             var post = await _postRepository.GetByIdAsync(postId);
@@ -325,10 +345,13 @@ public class PostService : IPostService
         {
             Id = post.Id,
             UserId = post.UserId,
-            UserName = post.User?.Name ?? "Unknown",
-            UserAvatar = post.User?.PictureUrl,
+            UserName = post.User?.FullName ?? "Unknown",
+            UserAvatar = post.User?.AlumniProfile?.ProfilePictureUrl,
             Content = post.Content,
+            Type = post.Type,
             ImageUrl = post.ImageUrl,
+            MediaUrls = post.GetMediaUrls(),
+            MediaCount = post.GetMediaCount(),
             IsPinned = post.IsPinned,
             LikesCount = likesCount,
             CommentsCount = post.Comments?.Count ?? 0,

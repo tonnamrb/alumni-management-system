@@ -1,88 +1,300 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:alumni_app/app/routes/app_routes.dart';
-import 'package:alumni_app/core/services/user_session_service.dart';
+import '../../../domain/entities/auth_models.dart';
+import '../../../domain/entities/app_error.dart';
+import '../../../domain/repositories/auth_repository.dart';
+import '../../../shared/services/auth_service.dart';
+import '../../../core/services/user_session_service.dart';
 
 class AuthController extends GetxController {
-  final formKey = GlobalKey<FormState>();
-  final emailController = TextEditingController();
-  final passwordController = TextEditingController();
+  final AuthRepository _authRepository;
+  late final AuthService _authService;
+  late final UserSessionService _userSessionService;
+
+  AuthController(this._authRepository);
   
-  final RxBool isLoading = false.obs;
-  final RxBool isLoginMode = true.obs;
-  
-  // ✅ เพิ่ม UserSessionService
-  final UserSessionService _userSessionService = Get.find<UserSessionService>();
-  
+  // State variables
+  final Rx<AuthState> authState = AuthState.initial().obs;
+  final Rx<User?> currentUser = Rx<User?>(null);
+
+  // Phone registration flow state
+  final RxString phoneNumber = ''.obs;
+  final RxString otpCode = ''.obs;
+  final RxString password = ''.obs;
+  final RxBool isOtpVerified = false.obs;
+
+  // Getters
+  bool get isAuthenticated => currentUser.value != null;
+  bool get isAdmin => currentUser.value?.isAdmin ?? false;
+  bool get isMember => currentUser.value?.isMember ?? true;
+  UserRole get userRole => currentUser.value != null 
+      ? UserRole.fromId(currentUser.value!.roleId)
+      : UserRole.member;
+
   @override
-  void onClose() {
-    emailController.dispose();
-    passwordController.dispose();
-    super.onClose();
+  void onInit() {
+    super.onInit();
+    _authService = Get.find<AuthService>();
+    _userSessionService = Get.find<UserSessionService>();
+    // เอา checkAuthStatus() ออก เพราะทำให้เกิด infinite loop
+    // ให้ SplashController จัดการ auth check แทน
   }
-  
-  void toggleMode() {
-    isLoginMode.value = !isLoginMode.value;
-    // Clear form when switching modes
-    emailController.clear();
-    passwordController.clear();
+
+  Future<void> checkAuthStatus() async {
+    authState.value = authState.value.copyWith(isLoading: true);
+    
+    final result = await _authRepository.getCurrentUser();
+    
+    result.fold(
+      (user) {
+        currentUser.value = user;
+        authState.value = AuthState.authenticated();
+      },
+      (error) {
+        currentUser.value = null;
+        authState.value = AuthState.unauthenticated();
+      },
+    );
   }
-  
-  Future<void> authenticate() async {
-    if (!formKey.currentState!.validate()) {
-      return;
+
+  // Phone Registration Flow
+  Future<bool> canRegisterWithPhone(String phone) async {
+    phoneNumber.value = phone;
+    authState.value = authState.value.copyWith(isLoading: true);
+    
+    final result = await _authRepository.canRegisterWithPhone(phone);
+    
+    return result.fold(
+      (canRegister) {
+        authState.value = authState.value.copyWith(isLoading: false);
+        if (!canRegister) {
+          authState.value = authState.value.copyWith(
+            error: AppError.validation('เบอร์โทรศัพท์นี้ไม่สามารถลงทะเบียนได้ หรือได้ลงทะเบียนแล้ว'),
+          );
+        }
+        return canRegister;
+      },
+      (error) {
+        authState.value = authState.value.copyWith(
+          isLoading: false,
+          error: error,
+        );
+        return false;
+      },
+    );
+  }
+
+  Future<bool> requestRegistrationOtp() async {
+    if (phoneNumber.value.isEmpty) {
+      authState.value = authState.value.copyWith(
+        error: AppError.validation('กรุณากรอกหมายเลขโทรศัพท์'),
+      );
+      return false;
     }
+
+    authState.value = authState.value.copyWith(isLoading: true);
     
-    isLoading.value = true;
+    final result = await _authRepository.requestRegistrationOtp(phoneNumber.value);
     
-    if (kDebugMode) {
-      debugPrint('🔐 AuthController: ${isLoginMode.value ? 'Login' : 'Register'} attempt');
-      debugPrint('🔐 Email: ${emailController.text}');
+    return result.fold(
+      (_) {
+        authState.value = authState.value.copyWith(isLoading: false);
+        return true;
+      },
+      (error) {
+        authState.value = authState.value.copyWith(
+          isLoading: false,
+          error: error,
+        );
+        return false;
+      },
+    );
+  }
+
+  Future<bool> verifyOtp(String otp) async {
+    otpCode.value = otp;
+    authState.value = authState.value.copyWith(isLoading: true);
+    
+    final result = await _authRepository.verifyOtp(phoneNumber.value, otp);
+    
+    return result.fold(
+      (isValid) {
+        isOtpVerified.value = isValid;
+        authState.value = authState.value.copyWith(isLoading: false);
+        if (!isValid) {
+          authState.value = authState.value.copyWith(
+            error: AppError.validation('รหัส OTP ไม่ถูกต้อง'),
+          );
+        }
+        return isValid;
+      },
+      (error) {
+        authState.value = authState.value.copyWith(
+          isLoading: false,
+          error: error,
+        );
+        return false;
+      },
+    );
+  }
+
+  Future<bool> completeRegistration(String password, {String? firstName, String? lastName}) async {
+    if (!isOtpVerified.value) {
+      authState.value = authState.value.copyWith(
+        error: AppError.validation('กรุณายืนยัน OTP ก่อน'),
+      );
+      return false;
     }
+
+    this.password.value = password;
+    authState.value = authState.value.copyWith(isLoading: true);
     
-    // Simulate authentication delay
-    await Future.delayed(const Duration(seconds: 2));
-    
-    // Mock authentication - always succeed
-    if (kDebugMode) {
-      debugPrint('🔐 AuthController: Authentication successful, navigating to main');
-    }
-    
-    // ✅ อัพเดตข้อมูล user ใน session หลังจาก login สำเร็จ
-    _userSessionService.updateUserInfo(
-      name: "John Doe", // In real app, ใช้ข้อมูลจาก API response
-      email: emailController.text,
+    final result = await _authRepository.completeRegistration(
+      phone: phoneNumber.value,
+      otpCode: otpCode.value,
+      password: password,
+      firstName: firstName,
+      lastName: lastName,
     );
     
-    isLoading.value = false;
-    
-    // Navigate to main screen
-    Get.offAllNamed(AppRoutes.main);
+    return result.fold(
+      (authResult) async {
+        // Store session in secure storage
+        await _authService.storeSession(authResult);
+        
+        // Update user session service
+        _userSessionService.updateUserInfo(
+          name: authResult.user.fullName,
+          email: authResult.user.email,
+          avatar: authResult.user.alumniProfile?.profilePictureUrl,
+        );
+        
+        currentUser.value = authResult.user;
+        authState.value = AuthState.authenticated();
+        _clearRegistrationState();
+        return true;
+      },
+      (error) {
+        authState.value = authState.value.copyWith(
+          isLoading: false,
+          error: error,
+        );
+        return false;
+      },
+    );
   }
-  
-  String? validateEmail(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Email is required';
-    }
+
+  // Login
+  Future<bool> loginWithPhone({
+    required String phone,
+    required String password,
+  }) async {
+    authState.value = authState.value.copyWith(isLoading: true);
     
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!emailRegex.hasMatch(value)) {
-      return 'Enter a valid email address';
-    }
+    final result = await _authRepository.loginWithPhone(
+      phone: phone,
+      password: password,
+    );
     
-    return null;
+    return result.fold(
+      (authResult) async {
+        // Store session in secure storage
+        await _authService.storeSession(authResult);
+        
+        // Update user session service
+        _userSessionService.updateUserInfo(
+          name: authResult.user.fullName,
+          email: authResult.user.email,
+          avatar: authResult.user.alumniProfile?.profilePictureUrl,
+        );
+        
+        currentUser.value = authResult.user;
+        authState.value = AuthState.authenticated();
+        return true;
+      },
+      (error) {
+        // ตรวจสอบว่าเป็นกรณีที่ต้องลงทะเบียนหรือไม่
+        if (error.message.contains('ต้องลงทะเบียน') || error.message.contains('ยังไม่ได้ตั้งรหัสผ่าน')) {
+          // กรณีที่เบอร์มีในระบบแต่ยังไม่ได้ลงทะเบียน
+          phoneNumber.value = phone;
+          authState.value = authState.value.copyWith(
+            isLoading: false,
+            error: AppError.validation('กรุณาลงทะเบียนด้วยเบอร์โทรศัพท์นี้ก่อน'),
+          );
+        } else {
+          authState.value = authState.value.copyWith(
+            isLoading: false,
+            error: error,
+          );
+        }
+        return false;
+      },
+    );
   }
+
+  /// ตรวจสอบว่าเบอร์นี้ต้องลงทะเบียนหรือไม่ (ใช้หลัง login fail)
+  Future<bool> shouldRegisterPhone(String phone) async {
+    final canRegister = await canRegisterWithPhone(phone);
+    if (canRegister) {
+      phoneNumber.value = phone;
+    }
+    return canRegister;
+  }
+
+  // Logout
+  Future<void> logout() async {
+    authState.value = authState.value.copyWith(isLoading: true);
+    
+    await _authRepository.logout();
+    await _authService.clearSession();
+    
+    // Clear user session service
+    _userSessionService.clearSession();
+    
+    currentUser.value = null;
+    authState.value = AuthState.unauthenticated();
+    _clearRegistrationState();
+  }
+
+  void clearError() {
+    authState.value = authState.value.copyWith(error: null);
+  }
+
+  void _clearRegistrationState() {
+    phoneNumber.value = '';
+    otpCode.value = '';
+    password.value = '';
+    isOtpVerified.value = false;
+  }
+}
+
+class AuthState {
+  final bool isLoading;
+  final bool isAuthenticated;
+  final AppError? error;
+
+  const AuthState({
+    this.isLoading = false,
+    this.isAuthenticated = false,
+    this.error,
+  });
+
+  factory AuthState.initial() => const AuthState();
   
-  String? validatePassword(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Password is required';
-    }
-    
-    if (value.length < 6) {
-      return 'Password must be at least 6 characters';
-    }
-    
-    return null;
+  factory AuthState.loading() => const AuthState(isLoading: true);
+  
+  factory AuthState.authenticated() => const AuthState(isAuthenticated: true);
+  
+  factory AuthState.unauthenticated() => const AuthState(isAuthenticated: false);
+
+  AuthState copyWith({
+    bool? isLoading,
+    bool? isAuthenticated,
+    AppError? error,
+  }) {
+    return AuthState(
+      isLoading: isLoading ?? this.isLoading,
+      isAuthenticated: isAuthenticated ?? this.isAuthenticated,
+      error: error ?? this.error,
+    );
   }
 }

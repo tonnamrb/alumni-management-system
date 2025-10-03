@@ -1,5 +1,5 @@
 ---
-applyTo: 'dart, flutter'
+applyTo: '**/*.dart, **/*.flutter'
 ---
 - บังคับโครงสร้างนี้กับโปรเจกต์ Flutter/Dart ทุกครั้งที่มีการ prompt
 .

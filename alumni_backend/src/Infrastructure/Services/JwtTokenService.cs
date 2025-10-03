@@ -44,20 +44,14 @@ public class JwtTokenService : IJwtTokenService
             var claims = new List<Claim>
             {
                 new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new(ClaimTypes.Name, user.Name),
+                new(ClaimTypes.Name, user.FullName),
                 new(ClaimTypes.Email, user.Email),
-                new(ClaimTypes.Role, user.Role.ToString()),
+                new(ClaimTypes.Role, user.RoleId.ToString()),
                 new("user_id", user.Id.ToString()),
-                new("is_active", user.IsActive.ToString()),
+                new("role_id", user.RoleId.ToString()),
                 new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
             };
-
-            // เพิ่ม provider claims หากมี
-            if (!string.IsNullOrEmpty(user.Provider))
-            {
-                claims.Add(new Claim("provider", user.Provider));
-            }
 
             var tokenDescriptor = new SecurityTokenDescriptor
             {

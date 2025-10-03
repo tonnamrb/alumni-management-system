@@ -15,10 +15,10 @@ public interface IUserRepository : IBaseRepository<User>
     Task<User?> GetByMobilePhoneAsync(string mobilePhone, CancellationToken cancellationToken = default);
     Task<bool> IsMobilePhoneExistsAsync(string mobilePhone, int? excludeUserId = null, CancellationToken cancellationToken = default);
     
-    // External data integration methods
-    Task<User?> GetByExternalMemberIDAsync(string externalMemberID, CancellationToken cancellationToken = default);
-    Task<List<User>> GetByExternalSystemIdAsync(string systemId, CancellationToken cancellationToken = default);
-    Task<List<User>> GetUsersNeedingSyncAsync(string? systemId = null, CancellationToken cancellationToken = default);
+    // External data integration methods (updated for new schema)
+    Task<User?> GetByMemberIDAsync(string memberID, CancellationToken cancellationToken = default);
+    Task<List<User>> GetUsersByGroupIDAsync(string groupID, CancellationToken cancellationToken = default);
+    Task<List<User>> GetAlumniMembersAsync(CancellationToken cancellationToken = default);
     
     // Data management methods
     Task<PagedResult<User>> GetAllPaginatedAsync(int page, int pageSize, string? search = null, string? externalSystemId = null, CancellationToken cancellationToken = default);

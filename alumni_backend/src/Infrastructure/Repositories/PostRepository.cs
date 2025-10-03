@@ -1,5 +1,6 @@
 using Application.Interfaces.Repositories;
 using Domain.Entities;
+using Domain.Enums;
 using Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,7 +25,7 @@ public class PostRepository : BaseRepository<Post>, IPostRepository
     {
         return await _dbSet
             .Include(p => p.User)
-            .Where(p => p.IsPinned && p.User.IsActive)
+            .Where(p => p.IsPinned && true)
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync(cancellationToken);
     }
@@ -61,7 +62,7 @@ public class PostRepository : BaseRepository<Post>, IPostRepository
     {
         return await _dbSet
             .Include(p => p.User)
-            .Where(p => p.User.IsActive)
+            .Where(p => true)
             .OrderByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -72,7 +73,7 @@ public class PostRepository : BaseRepository<Post>, IPostRepository
     {
         return await _dbSet
             .Include(p => p.User)
-            .Where(p => p.User.IsActive && 
+            .Where(p => true && 
                        p.Content.ToLower().Contains(searchTerm.ToLower()))
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -94,7 +95,7 @@ public class PostRepository : BaseRepository<Post>, IPostRepository
             .Include(p => p.User)
             .Include(p => p.Comments)
             .Include(p => p.Likes)
-            .Where(p => p.User.IsActive)
+            .Where(p => true)
             .OrderByDescending(p => p.IsPinned)
             .ThenByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)
@@ -106,7 +107,7 @@ public class PostRepository : BaseRepository<Post>, IPostRepository
     {
         return await _dbSet
             .Include(p => p.User)
-            .Where(p => p.User.IsActive)
+            .Where(p => true)
             .CountAsync();
     }
 
@@ -114,7 +115,7 @@ public class PostRepository : BaseRepository<Post>, IPostRepository
     {
         return await _dbSet
             .Include(p => p.User)
-            .Where(p => p.IsPinned && p.User.IsActive)
+            .Where(p => p.IsPinned && true)
             .CountAsync();
     }
 
@@ -129,5 +130,53 @@ public class PostRepository : BaseRepository<Post>, IPostRepository
         return await _context.Set<Like>()
             .Where(l => l.PostId == postId)
             .CountAsync();
+    }
+
+    // Missing methods from interface
+    public async Task<IEnumerable<Post>> GetPinnedPostsAsync(PostType? type, CancellationToken cancellationToken = default)
+    {
+        var query = _dbSet
+            .Include(p => p.User)
+            .Where(p => p.IsPinned);
+
+        if (type.HasValue)
+        {
+            query = query.Where(p => p.Type == type.Value);
+        }
+
+        return await query
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<Post>> GetPostsWithUserAndLikesAsync(int page, int pageSize, PostType? type)
+    {
+        var query = _dbSet
+            .Include(p => p.User)
+            .Include(p => p.Likes)
+            .AsQueryable();
+
+        if (type.HasValue)
+        {
+            query = query.Where(p => p.Type == type.Value);
+        }
+
+        return await query
+            .OrderByDescending(p => p.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+    }
+
+    public async Task<int> GetPostsCountAsync(PostType? type)
+    {
+        var query = _dbSet.AsQueryable();
+        
+        if (type.HasValue)
+        {
+            query = query.Where(p => p.Type == type.Value);
+        }
+
+        return await query.CountAsync();
     }
 }

@@ -10,6 +10,11 @@ class PostModel {
   final List<CommentModel> comments;
   final DateTime createdAt;
   
+  // Admin features
+  bool isPinned;
+  bool isReported;
+  int reportCount;
+  
   PostModel({
     required this.id,
     required this.author,
@@ -20,6 +25,9 @@ class PostModel {
     required this.isLiked,
     required this.comments,
     DateTime? createdAt,
+    this.isPinned = false,
+    this.isReported = false,
+    this.reportCount = 0,
   }) : createdAt = createdAt ?? DateTime.now();
 }
 

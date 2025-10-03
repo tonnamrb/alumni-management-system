@@ -2,9 +2,9 @@ import 'package:get/get.dart';
 
 /// Service สำหรับจัดการข้อมูล User ที่ login อยู่ปัจจุบัน
 class UserSessionService extends GetxService {
-  // ข้อมูล user ปัจจุบัน (mock data)
-  final RxString _currentUserName = "John Doe".obs;
-  final RxString _currentUserEmail = "john.doe@alumni.com".obs;
+  // ข้อมูล user ปัจจุบัน (เริ่มต้นเป็นไม่ได้ login)
+  final RxString _currentUserName = "".obs;
+  final RxString _currentUserEmail = "".obs;
   final RxString _currentUserAvatar = "".obs;
   
   // Getters

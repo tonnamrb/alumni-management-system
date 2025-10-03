@@ -136,3 +136,6 @@ D:\fusionware\use_project\alumni_v1\alumni_backend\tests\UnitTests\obj\Debug\net
 D:\fusionware\use_project\alumni_v1\alumni_backend\tests\UnitTests\obj\Debug\net8.0\UnitTests.pdb
 D:\fusionware\use_project\alumni_v1\alumni_backend\tests\UnitTests\obj\Debug\net8.0\UnitTests.genruntimeconfig.cache
 D:\fusionware\use_project\alumni_v1\alumni_backend\tests\UnitTests\obj\Debug\net8.0\ref\UnitTests.dll
+D:\fusionware\use_project\alumni_v1\alumni_backend\tests\UnitTests\obj\Debug\net8.0\UnitTests.sourcelink.json
+D:\fusionware\use_project\alumni_v1\alumni_backend\tests\UnitTests\bin\Debug\net8.0\BCrypt.Net-Next.dll
+D:\fusionware\use_project\alumni_v1\alumni_backend\tests\UnitTests\bin\Debug\net8.0\Microsoft.EntityFrameworkCore.InMemory.dll

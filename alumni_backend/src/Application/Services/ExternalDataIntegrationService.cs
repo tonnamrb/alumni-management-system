@@ -82,7 +82,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         return result;
     }
 
-    public async Task<ValidationResult> ValidateDataAsync(List<ExternalAlumniData> data, string externalSystemId, CancellationToken cancellationToken = default)
+    public Task<ValidationResult> ValidateDataAsync(List<ExternalAlumniData> data, string externalSystemId, CancellationToken cancellationToken = default)
     {
         var result = new ImportResult { ExternalSystemId = externalSystemId };
         var validRecords = 0;
@@ -102,21 +102,21 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
             {
                 _logger.LogError(ex, "Error validating alumni record {MemberID}", alumniData.MemberID);
                 result.Errors.Add(ImportError.Create(
-                    alumniData.MemberID, 
+                    alumniData.MemberID ?? "UNKNOWN", 
                     "General", 
                     ex.Message, 
                     errorCode: "VALIDATION_EXCEPTION"));
             }
         }
 
-        return new ValidationResult
+        return Task.FromResult(new ValidationResult
         {
             IsValid = result.Errors.Count == 0,
             Errors = result.Errors,
             Warnings = result.Warnings,
             ValidRecords = validRecords,
             InvalidRecords = data.Count - validRecords
-        };
+        });
     }
 
     public async Task<ImportResult> ProcessBatchDataAsync(
@@ -151,7 +151,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
             if (!ValidateAlumniData(data, result))
             {
                 _logger.LogWarning("Invalid data for member {MemberID}: {Errors}", 
-                    data.MemberID, string.Join(", ", result.Errors.Select(e => e.Error)));
+                    data.MemberID ?? "UNKNOWN", string.Join(", ", result.Errors.Select(e => e.Error)));
                 return false;
             }
 
@@ -206,7 +206,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
             string.IsNullOrWhiteSpace(data.Firstname))
         {
             result.Errors.Add(ImportError.Create(
-                data.MemberID, 
+                data.MemberID ?? "UNKNOWN", 
                 "Name", 
                 "Either NameInYearbook or Firstname is required", 
                 errorCode: "REQUIRED_FIELD"));
@@ -216,7 +216,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         // Mobile phone validation
         if (!string.IsNullOrWhiteSpace(data.MobilePhone))
         {
-            var normalizedPhone = ValidateAndNormalizePhoneNumber(data.MobilePhone, data.MemberID, result);
+            var normalizedPhone = ValidateAndNormalizePhoneNumber(data.MobilePhone, data.MemberID ?? "UNKNOWN", result);
             if (normalizedPhone == null)
             {
                 isValid = false;
@@ -227,7 +227,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         if (!string.IsNullOrWhiteSpace(data.Email) && !IsValidEmail(data.Email))
         {
             result.Errors.Add(ImportError.Create(
-                data.MemberID, 
+                data.MemberID ?? "UNKNOWN", 
                 "Email", 
                 "Invalid email format", 
                 data.Email, 
@@ -240,7 +240,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
             (data.GraduationYear < 1950 || data.GraduationYear > DateTime.Now.Year + 10))
         {
             result.Warnings.Add(ImportWarning.Create(
-                data.MemberID, 
+                data.MemberID ?? "UNKNOWN", 
                 "GraduationYear", 
                 "Graduation year seems unusual", 
                 data.GraduationYear.ToString()));
@@ -289,10 +289,10 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
 
     #region Duplicate Detection
 
-    public async Task<User?> FindExistingUserAsync(string externalMemberID, string? normalizedMobile, CancellationToken cancellationToken = default)
+    public async Task<User?> FindExistingUserAsync(string memberID, string? normalizedMobile, CancellationToken cancellationToken = default)
     {
-        // Try to find by external member ID first
-        var user = await _userRepository.GetByExternalMemberIDAsync(externalMemberID, cancellationToken);
+        // Try to find by member ID first
+        var user = await _userRepository.GetByMemberIDAsync(memberID, cancellationToken);
         
         if (user == null && !string.IsNullOrWhiteSpace(normalizedMobile))
         {
@@ -376,14 +376,12 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         var user = new User
         {
             MobilePhone = normalizedMobile ?? string.Empty,
-            Email = data.Email,
-            Name = GetDisplayName(data),
-            ExternalMemberID = data.MemberID,
-            ExternalSystemId = externalSystemId,
-            ExternalDataLastSync = DateTime.UtcNow,
-            Provider = "External",
-            Role = UserRole.Alumni,
-            IsActive = true,
+            Email = data.Email ?? string.Empty,
+            Firstname = GetFirstname(data),
+            Lastname = GetLastname(data),
+            MemberID = data.MemberID ?? "UNKNOWN",
+            NameInYearbook = GetDisplayName(data),
+            RoleId = 1, // Member role
             CreatedAt = DateTime.UtcNow
         };
 
@@ -394,7 +392,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         var profile = new AlumniProfile
         {
             UserId = createdUser.Id,
-            ExternalMemberID = data.MemberID,
+            ExternalMemberID = data.MemberID ?? "UNKNOWN",
             ExternalSystemId = externalSystemId,
             ExternalDataLastSync = DateTime.UtcNow,
             NameInYearbook = data.NameInYearbook,
@@ -441,15 +439,15 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         CancellationToken cancellationToken = default)
     {
         // Update user data
-        existingUser.Name = GetDisplayName(data);
+        existingUser.Firstname = GetFirstname(data);
+        existingUser.Lastname = GetLastname(data);
+        existingUser.NameInYearbook = GetDisplayName(data);
         if (!string.IsNullOrWhiteSpace(data.Email))
         {
             existingUser.Email = data.Email;
         }
         
-        existingUser.ExternalMemberID = data.MemberID;
-        existingUser.ExternalSystemId = externalSystemId;
-        existingUser.ExternalDataLastSync = DateTime.UtcNow;
+        existingUser.MemberID = data.MemberID;
         existingUser.UpdateTimestamp();
 
         await _userRepository.UpdateAsync(existingUser, cancellationToken);
@@ -515,7 +513,8 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         int olderThanHours = 24,
         CancellationToken cancellationToken = default)
     {
-        return await _userRepository.GetUsersNeedingSyncAsync(externalSystemId, cancellationToken);
+        // In the new schema, we don't track sync status, so return all alumni members
+        return await _userRepository.GetAlumniMembersAsync(cancellationToken);
     }
 
     #endregion
@@ -558,7 +557,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
             {
                 _logger.LogError(ex, "Error processing alumni record {MemberID}", alumniData.MemberID);
                 result.Errors.Add(ImportError.Create(
-                    alumniData.MemberID, 
+                    alumniData.MemberID ?? "UNKNOWN", 
                     "General", 
                     ex.Message, 
                     errorCode: "PROCESSING_ERROR"));
@@ -585,7 +584,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         string? normalizedMobile = null;
         if (!string.IsNullOrWhiteSpace(data.MobilePhone))
         {
-            normalizedMobile = ValidateAndNormalizePhoneNumber(data.MobilePhone, data.MemberID, result);
+            normalizedMobile = ValidateAndNormalizePhoneNumber(data.MobilePhone, data.MemberID ?? "UNKNOWN", result);
             if (normalizedMobile == null)
             {
                 result.FailedImports++;
@@ -594,7 +593,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         }
 
         // Find existing user
-        var existingUser = await FindExistingUserAsync(data.MemberID, normalizedMobile, cancellationToken);
+        var existingUser = await FindExistingUserAsync(data.MemberID ?? "UNKNOWN", normalizedMobile, cancellationToken);
 
         if (existingUser != null && !overwriteExisting)
         {
@@ -626,6 +625,16 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         }
 
         return $"{data.Firstname} {data.Lastname}".Trim();
+    }
+
+    private static string GetFirstname(ExternalAlumniData data)
+    {
+        return data.Firstname ?? string.Empty;
+    }
+
+    private static string GetLastname(ExternalAlumniData data)
+    {
+        return data.Lastname ?? string.Empty;
     }
 
     private static void UpdateProfileFromExternalData(AlumniProfile profile, ExternalAlumniData data, string externalSystemId)
@@ -675,7 +684,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
             if (estimatedGraduationAge < 18 || estimatedGraduationAge > 35)
             {
                 result.Warnings.Add(ImportWarning.Create(
-                    data.MemberID, 
+                    data.MemberID ?? "UNKNOWN", 
                     "AgeValidation", 
                     "Age at graduation seems unusual", 
                     $"{estimatedGraduationAge} years old"));
@@ -686,7 +695,7 @@ public class ExternalDataIntegrationService : IExternalDataIntegrationService
         if (!string.IsNullOrWhiteSpace(data.CompanyName) && data.CompanyName.Length > 200)
         {
             result.Warnings.Add(ImportWarning.Create(
-                data.MemberID, 
+                data.MemberID ?? "UNKNOWN", 
                 "CompanyName", 
                 "Company name is very long", 
                 data.CompanyName,

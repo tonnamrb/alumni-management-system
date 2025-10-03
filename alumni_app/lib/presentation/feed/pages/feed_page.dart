@@ -4,6 +4,7 @@ import 'package:flutter_i18n/flutter_i18n.dart';
 import 'package:alumni_app/presentation/feed/controllers/feed_controller.dart';
 import 'package:alumni_app/shared/models/post_model.dart';
 import 'package:alumni_app/shared/widgets/double_tap_like_widget.dart';
+import 'package:alumni_app/presentation/widgets/admin_menu_button.dart';
 
 class FeedPage extends GetView<FeedController> {
   const FeedPage({super.key});
@@ -101,9 +102,29 @@ class _PostCard extends StatelessWidget {
             ),
             title: GestureDetector(
               onTap: () => _navigateToUserProfile(post.author),
-              child: Text(
-                post.author,
-                style: const TextStyle(fontWeight: FontWeight.w600),
+              child: Row(
+                children: [
+                  Text(
+                    post.author,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  if (post.isPinned) ...[
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.push_pin,
+                      size: 16,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                  ],
+                  if (post.isReported) ...[
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.flag,
+                      size: 16,
+                      color: Colors.orange,
+                    ),
+                  ],
+                ],
               ),
             ),
             subtitle: Text('${DateTime.now().difference(DateTime.now().subtract(Duration(hours: post.id))).inHours}h'),
@@ -192,6 +213,14 @@ class _PostCard extends StatelessWidget {
                     ],
                   );
                 }),
+                
+                const Spacer(),
+                
+                // Admin Menu Button
+                AdminMenuButton(
+                  post: post,
+                  onPostUpdated: () => controller.refreshPosts(),
+                ),
               ],
             ),
           ),

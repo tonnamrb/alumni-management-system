@@ -328,7 +328,7 @@ public class ExternalDataIntegrationServiceTests : IDisposable
         var alumniData = CreateValidAlumniData();
         
         _mockUserRepository
-            .Setup(x => x.GetByExternalMemberIDAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByMemberIDAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((User?)null);
         
         _mockUserRepository
@@ -370,12 +370,12 @@ public class ExternalDataIntegrationServiceTests : IDisposable
     #region User Management Tests
 
     [Fact]
-    public async Task FindExistingUserAsync_WithExternalMemberID_FindsUser()
+    public async Task FindExistingUserAsync_WithMemberID_FindsUser()
     {
         // Arrange
         var expectedUser = CreateTestUser();
         _mockUserRepository
-            .Setup(x => x.GetByExternalMemberIDAsync("TEST001", It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByMemberIDAsync("TEST001", It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedUser);
 
         // Act
@@ -383,7 +383,7 @@ public class ExternalDataIntegrationServiceTests : IDisposable
 
         // Assert
         Assert.Equal(expectedUser, result);
-        _mockUserRepository.Verify(x => x.GetByExternalMemberIDAsync("TEST001", It.IsAny<CancellationToken>()), Times.Once);
+        _mockUserRepository.Verify(x => x.GetByMemberIDAsync("TEST001", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -392,7 +392,7 @@ public class ExternalDataIntegrationServiceTests : IDisposable
         // Arrange
         var expectedUser = CreateTestUser();
         _mockUserRepository
-            .Setup(x => x.GetByExternalMemberIDAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetByMemberIDAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((User?)null);
         
         _mockUserRepository
@@ -468,11 +468,10 @@ public class ExternalDataIntegrationServiceTests : IDisposable
             Id = 1,
             MobilePhone = "66812345678",
             Email = "test@example.com",
-            Name = "Test User",
-            ExternalMemberID = "TEST001",
-            ExternalSystemId = "TEST_SYSTEM",
-            Role = UserRole.Alumni,
-            IsActive = true,
+            Firstname = "Test",
+            Lastname = "User",
+            RoleId = 1, // Alumni/Member role
+            MemberID = "TEST001",
             CreatedAt = DateTime.UtcNow
         };
     }

@@ -7,10 +7,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace Api.Controllers;
 
 /// <summary>
-/// Event management endpoints (ใช้สำหรับ Posts/Events)
+/// Event management endpoints (ใช้สำหรับ Events)
 /// </summary>
 [ApiController]
-[Route("api/v1/posts")]
+[Route("api/v1/events")]
 [Authorize]
 public class EventController : BaseController
 {

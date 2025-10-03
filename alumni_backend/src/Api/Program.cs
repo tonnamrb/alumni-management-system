@@ -1,6 +1,7 @@
 using Api.Middleware;
 using Application;
 using Infrastructure;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,8 +58,12 @@ builder.Services.AddCors(options =>
     });
 });
 
-// API Versioning (Simplified)
-// สามารถเพิ่ม API Versioning ภายหลังได้
+// API Versioning
+builder.Services.AddApiVersioning(opt =>
+{
+    opt.DefaultApiVersion = new Microsoft.AspNetCore.Mvc.ApiVersion(1, 0);
+    opt.AssumeDefaultVersionWhenUnspecified = true;
+});
 
 // Configure Kestrel Server
 builder.WebHost.ConfigureKestrel(options =>
@@ -117,6 +122,64 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+// Ensure database is created and migrations are applied
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var context = scope.ServiceProvider.GetRequiredService<Infrastructure.Data.AppDbContext>();
+        var environment = app.Environment;
+        
+        // Check if using a relational database provider
+        if (context.Database.IsRelational())
+        {
+            // ⚠️ IMPORTANT: Different migration strategy based on environment
+            if (environment.IsEnvironment("Staging"))
+            {
+                // For staging: Selective migration - Users/Roles exist, but social features tables may not
+                var canConnect = await context.Database.CanConnectAsync();
+                if (!canConnect)
+                {
+                    Console.WriteLine("❌ Cannot connect to staging database");
+                    throw new InvalidOperationException("Staging database connection failed");
+                }
+
+                // Check if critical tables exist
+                var hasPosts = await context.Database.SqlQueryRaw<int>(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'Posts'").FirstOrDefaultAsync() > 0;
+                
+                if (!hasPosts)
+                {
+                    Console.WriteLine("⚠️  Social features tables missing in staging");
+                    Console.WriteLine("📋 Please run: create_missing_tables.sql");
+                    Console.WriteLine("✅ Staging database connection verified - Users/Roles tables exist");
+                }
+                else
+                {
+                    Console.WriteLine("✅ Staging database verified - all tables exist");
+                }
+            }
+            else
+            {
+                // For development/production: Apply migrations normally
+                context.Database.Migrate();
+                Console.WriteLine("✅ Database migrations applied successfully");
+            }
+        }
+        else
+        {
+            // For InMemory database, just ensure it's created
+            context.Database.EnsureCreated();
+            Console.WriteLine("✅ InMemory database created successfully");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ Database initialization failed: {ex.Message}");
+        Console.WriteLine("Continuing with application startup...");
+    }
+}
 
 // Configure the HTTP request pipeline.
 

@@ -12,14 +12,19 @@ public interface IAuthenticationService
     Task<AuthResult> LoginWithEmailAsync(string email, string password);
     Task<User> RegisterWithEmailAsync(string email, string password, string name);
     
-    // Mobile phone authentication (new)
+    // Mobile phone authentication (updated for backoffice integration)
     Task<AuthResult> LoginWithMobilePhoneAsync(string mobilePhone, string password);
-    Task<User> RegisterWithMobilePhoneAsync(string mobilePhone, string name, string password, string? email = null);
+    
+    // Registration flow with OTP verification
+    Task<bool> CanRegisterWithMobilePhoneAsync(string mobilePhone);
+    Task<bool> RequestRegistrationOtpAsync(string mobilePhone);
+    Task<bool> VerifyRegistrationOtpAsync(string mobilePhone, string otpCode);
+    Task<User> CompleteRegistrationAsync(string mobilePhone, string password);
     
     // External authentication
     Task<AuthResult> LoginWithProviderAsync(string provider, string providerId, string email, string name, string? pictureUrl = null);
     
-    // OTP operations (future implementation)
+    // OTP operations (legacy - keep for compatibility)
     Task<bool> RequestOtpAsync(string mobilePhone, string purpose = "login");
     Task<bool> VerifyOtpAsync(string mobilePhone, string otpCode);
     

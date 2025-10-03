@@ -5,6 +5,7 @@ namespace Infrastructure.Data;
 
 public class AppDbContext : DbContext
 {
+    public DbSet<Role> Roles { get; set; }
     public DbSet<User> Users { get; set; }
     public DbSet<AlumniProfile> AlumniProfiles { get; set; }
     public DbSet<Post> Posts { get; set; }
@@ -12,6 +13,7 @@ public class AppDbContext : DbContext
     public DbSet<Like> Likes { get; set; }
     public DbSet<Report> Reports { get; set; }
     public DbSet<AuditLog> AuditLogs { get; set; }
+    public DbSet<Otp> Otps { get; set; }
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
     {
@@ -23,11 +25,6 @@ public class AppDbContext : DbContext
 
         // Apply all configurations from current assembly
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
-
-        // Configure enum storage as strings
-        modelBuilder.Entity<User>()
-            .Property(e => e.Role)
-            .HasConversion<string>();
 
         modelBuilder.Entity<Report>()
             .Property(e => e.Type)

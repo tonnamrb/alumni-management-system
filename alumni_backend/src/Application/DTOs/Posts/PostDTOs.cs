@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Domain.Enums;
 
 namespace Application.DTOs.Posts;
 
@@ -8,8 +9,12 @@ public class CreatePostDto
     [StringLength(2000, ErrorMessage = "Content must be between 1 and 2000 characters", MinimumLength = 1)]
     public string Content { get; set; } = string.Empty;
     
+    public PostType Type { get; set; } = PostType.Text;
+    
     [Url(ErrorMessage = "Invalid image URL format")]
     public string? ImageUrl { get; set; }
+    
+    public List<string>? MediaUrls { get; set; }
 }
 
 public class UpdatePostDto
@@ -18,8 +23,12 @@ public class UpdatePostDto
     [StringLength(2000, ErrorMessage = "Content must be between 1 and 2000 characters", MinimumLength = 1)]
     public string Content { get; set; } = string.Empty;
     
+    public PostType Type { get; set; } = PostType.Text;
+    
     [Url(ErrorMessage = "Invalid image URL format")]
     public string? ImageUrl { get; set; }
+    
+    public List<string>? MediaUrls { get; set; }
 }
 
 public class PostDto
@@ -29,7 +38,10 @@ public class PostDto
     public string UserName { get; set; } = string.Empty;
     public string? UserAvatar { get; set; }
     public string Content { get; set; } = string.Empty;
+    public PostType Type { get; set; }
     public string? ImageUrl { get; set; }
+    public List<string> MediaUrls { get; set; } = new();
+    public int MediaCount { get; set; }
     public bool IsPinned { get; set; }
     public int LikesCount { get; set; }
     public int CommentsCount { get; set; }

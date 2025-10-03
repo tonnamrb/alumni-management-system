@@ -18,6 +18,7 @@ public class AuthenticationService : IAuthenticationService
     private readonly IUserRepository _userRepository;
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IPasswordService _passwordService;
+    private readonly IOtpService _otpService;
     private readonly IMapper _mapper;
     private readonly ILogger<AuthenticationService> _logger;
 
@@ -25,94 +26,32 @@ public class AuthenticationService : IAuthenticationService
         IUserRepository userRepository,
         IJwtTokenService jwtTokenService,
         IPasswordService passwordService,
+        IOtpService otpService,
         IMapper mapper,
         ILogger<AuthenticationService> logger)
     {
         _userRepository = userRepository;
         _jwtTokenService = jwtTokenService;
         _passwordService = passwordService;
+        _otpService = otpService;
         _mapper = mapper;
         _logger = logger;
     }
 
-    #region Email Authentication (Existing)
+    #region Email Authentication (Deprecated in New Schema)
 
-    public async Task<AuthResult> LoginWithEmailAsync(string email, string password)
+    public Task<AuthResult> LoginWithEmailAsync(string email, string password)
     {
-        try
-        {
-            var user = await _userRepository.GetByEmailAsync(email);
-            if (user == null)
-            {
-                _logger.LogWarning("Login attempt with non-existent email: {Email}", email);
-                return AuthResult.Failed("Invalid email or password");
-            }
-
-            if (!user.IsActive)
-            {
-                _logger.LogWarning("Login attempt with inactive user: {UserId}", user.Id);
-                return AuthResult.Failed("Account is deactivated");
-            }
-
-            // TODO: Verify password hash (implement password hashing)
-            if (!VerifyPasswordHash(password, user.PasswordHash))
-            {
-                _logger.LogWarning("Invalid password for user: {UserId}", user.Id);
-                return AuthResult.Failed("Invalid email or password");
-            }
-
-            // Update last login
-            user.UpdateLastLogin();
-            await _userRepository.UpdateAsync(user);
-
-            // Generate JWT token
-            var token = await _jwtTokenService.GenerateAccessTokenAsync(user);
-            var userDto = _mapper.Map<UserDto>(user);
-
-            _logger.LogInformation("Successful email login for user: {UserId}", user.Id);
-            return AuthResult.Successful(token, userDto, DateTime.UtcNow.AddHours(1));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during email login for email: {Email}", email);
-            return AuthResult.Failed("An error occurred during login");
-        }
+        // Email authentication is not supported in the new backoffice integration schema
+        // Only mobile phone + password authentication is supported
+        throw new NotSupportedException("Email authentication is not supported. Use mobile phone authentication.");
     }
 
-    public async Task<User> RegisterWithEmailAsync(string email, string password, string name)
+    public Task<Domain.Entities.User> RegisterWithEmailAsync(string email, string password, string name)
     {
-        try
-        {
-            // Check if user already exists
-            var existingUser = await _userRepository.GetByEmailAsync(email);
-            if (existingUser != null)
-            {
-                throw new InvalidOperationException("User with this email already exists");
-            }
-
-            // Create new user
-            var user = new User
-            {
-                Email = email,
-                Name = name,
-                PasswordHash = HashPassword(password),
-                Provider = "Local",
-                Role = UserRole.Alumni,
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            var createdUser = await _userRepository.AddAsync(user);
-            await _userRepository.SaveChangesAsync();
-            _logger.LogInformation("New user registered with email: {UserId}", createdUser.Id);
-            
-            return createdUser;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during email registration for email: {Email}", email);
-            throw;
-        }
+        // Email registration is not supported in the new backoffice integration schema
+        // Only mobile phone registration with OTP verification is supported
+        throw new NotSupportedException("Email registration is not supported. Use mobile phone registration with OTP verification.");
     }
 
     #endregion
@@ -129,27 +68,24 @@ public class AuthenticationService : IAuthenticationService
             if (user == null)
             {
                 _logger.LogWarning("Login attempt with non-existent mobile phone: {MobilePhone}", normalizedPhone);
-                return AuthResult.Failed("User not found with this mobile phone number");
+                return AuthResult.Failed("หมายเลขโทรศัพท์หรือรหัสผ่านไม่ถูกต้อง");
             }
 
-            if (!user.IsActive)
+            // ตรวจสอบว่ามี password หรือยัง (สำหรับ user ที่ import จาก backoffice แต่ยังไม่ลงทะเบียน)
+            if (string.IsNullOrEmpty(user.PasswordHash))
             {
-                _logger.LogWarning("Login attempt with inactive user: {UserId}", user.Id);
-                return AuthResult.Failed("Account is deactivated");
+                _logger.LogWarning("Login attempt with unregistered user: {MobilePhone}", normalizedPhone);
+                return AuthResult.Failed("กรุณาลงทะเบียนก่อนเข้าสู่ระบบ");
             }
 
             // Verify password
-            if (string.IsNullOrEmpty(user.PasswordHash) || !_passwordService.VerifyPassword(password, user.PasswordHash))
+            if (!_passwordService.VerifyPassword(password, user.PasswordHash))
             {
                 _logger.LogWarning("Invalid password attempt for mobile phone: {MobilePhone}", normalizedPhone);
-                return AuthResult.Failed("Invalid mobile phone or password");
+                return AuthResult.Failed("หมายเลขโทรศัพท์หรือรหัสผ่านไม่ถูกต้อง");
             }
 
-            // Update last login
-            user.UpdateLastLogin();
-            await _userRepository.UpdateAsync(user);
-
-            // Generate JWT token
+            // Generate JWT token (ไม่ต้องอัพเดท LastLogin เพราะไม่มี field นี้แล้วใน new schema)
             var token = await _jwtTokenService.GenerateAccessTokenAsync(user);
             var userDto = _mapper.Map<UserDto>(user);
 
@@ -159,121 +95,148 @@ public class AuthenticationService : IAuthenticationService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during mobile login for phone: {MobilePhone}", mobilePhone);
-            return AuthResult.Failed("An error occurred during login");
-        }
-    }
-
-    public async Task<User> RegisterWithMobilePhoneAsync(string mobilePhone, string name, string password, string? email = null)
-    {
-        try
-        {
-            var normalizedPhone = PhoneNumberHelper.NormalizeMobilePhone(mobilePhone);
-
-            // Check if user already exists
-            var existingUser = await _userRepository.GetByMobilePhoneAsync(normalizedPhone);
-            if (existingUser != null)
-            {
-                throw new InvalidOperationException("User with this mobile phone already exists");
-            }
-
-            // Hash password
-            var passwordHash = _passwordService.HashPassword(password);
-
-            // Create new user
-            var user = new User
-            {
-                MobilePhone = normalizedPhone,
-                Name = name,
-                Email = email ?? $"user_{normalizedPhone}@alumni.local", // กำหนด default email หาก null
-                PasswordHash = passwordHash,
-                Provider = "Mobile",
-                Role = UserRole.Alumni,
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            var createdUser = await _userRepository.AddAsync(user);
-            await _userRepository.SaveChangesAsync();
-            _logger.LogInformation("New user registered with mobile phone: {UserId}", createdUser.Id);
-
-            return createdUser;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during mobile registration for phone: {MobilePhone}", mobilePhone);
-            throw;
+            return AuthResult.Failed("เกิดข้อผิดพลาดในการเข้าสู่ระบบ");
         }
     }
 
     #endregion
 
-    #region External Authentication
+    #region Registration Flow with OTP (New)
 
-    public async Task<AuthResult> LoginWithProviderAsync(string provider, string providerId, string email, string name, string? pictureUrl = null)
+    public async Task<bool> CanRegisterWithMobilePhoneAsync(string mobilePhone)
     {
         try
         {
-            // Try to find existing user by provider
-            var user = await _userRepository.GetByProviderAsync(provider, providerId);
+            var normalizedPhone = PhoneNumberHelper.NormalizeMobilePhone(mobilePhone);
             
-            if (user == null)
+            // ตรวจสอบว่าเบอร์นี้มีในระบบหรือไม่
+            var existingUser = await _userRepository.GetByMobilePhoneAsync(normalizedPhone);
+            
+            // ถ้าไม่มีเบอร์ในระบบ → ไม่สามารถสมัครได้ (เฉพาะเบอร์ที่มีอยู่แล้วเท่านั้นที่สมัครได้)
+            if (existingUser == null)
             {
-                // Try to find by email if provider user doesn't exist
-                user = await _userRepository.GetByEmailAsync(email);
-                
-                if (user != null)
-                {
-                    // Link existing account with provider
-                    user.Provider = provider;
-                    user.ProviderId = providerId;
-                    user.PictureUrl = pictureUrl;
-                    user.UpdateLastLogin();
-                    await _userRepository.UpdateAsync(user);
-                }
-                else
-                {
-                    // Create new user from provider
-                    user = new User
-                    {
-                        Email = email,
-                        Name = name,
-                        Provider = provider,
-                        ProviderId = providerId,
-                        PictureUrl = pictureUrl,
-                        Role = UserRole.Alumni,
-                        IsActive = true,
-                        CreatedAt = DateTime.UtcNow,
-                        LastLoginAt = DateTime.UtcNow
-                    };
-                    
-                    user = await _userRepository.AddAsync(user);
-                    await _userRepository.SaveChangesAsync();
-                }
+                _logger.LogInformation("Mobile phone not found in system, cannot register: {MobilePhone}", normalizedPhone);
+                return false;
             }
-            else
-            {
-                // Update existing provider user
-                user.UpdateLastLogin();
-                await _userRepository.UpdateAsync(user);
-            }
-
-            if (!user.IsActive)
-            {
-                return AuthResult.Failed("Account is deactivated");
-            }
-
-            // Generate JWT token
-            var token = await _jwtTokenService.GenerateAccessTokenAsync(user);
-            var userDto = _mapper.Map<UserDto>(user);
-
-            _logger.LogInformation("Successful {Provider} login for user: {UserId}", provider, user.Id);
-            return AuthResult.Successful(token, userDto, DateTime.UtcNow.AddHours(1));
+            
+            // ถ้ามีเบอร์แล้ว แต่ยังไม่ได้ตั้ง password → สมัครได้
+            var canRegister = string.IsNullOrEmpty(existingUser.PasswordHash);
+            _logger.LogInformation("Existing mobile phone registration check: {MobilePhone}, Has Password: {HasPassword}, Can Register: {CanRegister}", 
+                normalizedPhone, !string.IsNullOrEmpty(existingUser.PasswordHash), canRegister);
+            
+            return canRegister;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during {Provider} login for email: {Email}", provider, email);
-            return AuthResult.Failed("An error occurred during login");
+            _logger.LogError(ex, "Error checking registration eligibility for phone: {MobilePhone}", mobilePhone);
+            return false;
         }
+    }
+
+    public async Task<bool> RequestRegistrationOtpAsync(string mobilePhone)
+    {
+        try
+        {
+            // ตรวจสอบว่าสมัครได้หรือไม่
+            if (!await CanRegisterWithMobilePhoneAsync(mobilePhone))
+            {
+                throw new InvalidOperationException("เบอร์โทรศัพท์นี้ไม่สามารถลงทะเบียนได้ หรือได้ลงทะเบียนแล้ว");
+            }
+            
+            // ส่ง OTP ผ่าน OtpService
+            var otpCode = await _otpService.GenerateOtpAsync(mobilePhone, "registration");
+            
+            _logger.LogInformation("Registration OTP requested for phone: {MobilePhone}", mobilePhone);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error requesting registration OTP for phone: {MobilePhone}", mobilePhone);
+            throw;
+        }
+    }
+
+    public async Task<bool> VerifyRegistrationOtpAsync(string mobilePhone, string otpCode)
+    {
+        try
+        {
+            var isValid = await _otpService.VerifyOtpAsync(mobilePhone, otpCode, "registration");
+            
+            if (isValid)
+            {
+                _logger.LogInformation("Registration OTP verified successfully for phone: {MobilePhone}", mobilePhone);
+            }
+            else
+            {
+                _logger.LogWarning("Invalid registration OTP for phone: {MobilePhone}", mobilePhone);
+            }
+            
+            return isValid;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error verifying registration OTP for phone: {MobilePhone}", mobilePhone);
+            return false;
+        }
+    }
+
+    public async Task<Domain.Entities.User> CompleteRegistrationAsync(string mobilePhone, string password)
+    {
+        try
+        {
+            var normalizedPhone = PhoneNumberHelper.NormalizeMobilePhone(mobilePhone);
+            _logger.LogInformation("CompleteRegistration - Normalized phone: {NormalizedPhone} from input: {InputPhone}", 
+                normalizedPhone, mobilePhone);
+            
+            var user = await _userRepository.GetByMobilePhoneAsync(normalizedPhone);
+            
+            if (user == null)
+            {
+                _logger.LogWarning("CompleteRegistration - User not found for normalized phone: {NormalizedPhone}", 
+                    normalizedPhone);
+                throw new InvalidOperationException("ไม่พบข้อมูลผู้ใช้งาน");
+            }
+            
+            if (!string.IsNullOrEmpty(user.PasswordHash))
+            {
+                throw new InvalidOperationException("ผู้ใช้งานได้ลงทะเบียนแล้ว");
+            }
+            
+            // Set password
+            user.PasswordHash = _passwordService.HashPassword(password);
+            
+            await _userRepository.UpdateAsync(user);
+            await _userRepository.SaveChangesAsync();
+            
+            _logger.LogInformation("Registration completed for phone: {MobilePhone}, UserId: {UserId}", 
+                normalizedPhone, user.Id);
+            
+            return user;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error completing registration for phone: {MobilePhone}", mobilePhone);
+            throw;
+        }
+    }
+
+    // Legacy method - kept for compatibility but will be deprecated
+    public Task<Domain.Entities.User> RegisterWithMobilePhoneAsync(string mobilePhone, string name, string password, string? email = null)
+    {
+        // This method is deprecated in favor of the new OTP-based registration flow
+        // Use CanRegisterWithMobilePhoneAsync -> RequestRegistrationOtpAsync -> VerifyRegistrationOtpAsync -> CompleteRegistrationAsync
+        throw new NotSupportedException("This registration method is deprecated. Use the new OTP-based registration flow.");
+    }
+
+    #endregion
+
+    #region External Authentication (Deprecated in New Schema)
+
+    public Task<AuthResult> LoginWithProviderAsync(string provider, string providerId, string email, string name, string? pictureUrl = null)
+    {
+        // External provider authentication is not supported in the new backoffice integration schema
+        // Only mobile phone + password authentication is supported
+        throw new NotSupportedException("External provider authentication is not supported. Use mobile phone authentication.");
     }
 
     #endregion

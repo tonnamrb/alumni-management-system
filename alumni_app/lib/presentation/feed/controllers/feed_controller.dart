@@ -14,6 +14,11 @@ class FeedController extends GetxController {
     super.onInit();
     _loadMockPosts();
   }
+
+  /// Refresh posts list
+  void refreshPosts() {
+    _loadMockPosts();
+  }
   
   void _loadMockPosts() {
     isLoading.value = true;
@@ -22,24 +27,27 @@ class FeedController extends GetxController {
     final mockPosts = [
       PostModel(
         id: 1,
-        author: "Alice Johnson",
+        author: "Admin",
         avatar: "",
         media: "https://images.unsplash.com/photo-1759239572496-4ec13e7643d6?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-        caption: "Beautiful day for photography! 📸",
-        likes: 42,
+        caption: "🔥 ประกาศสำคัญ: ระบบใหม่เปิดให้บริการแล้ว! มาร่วมสร้างชุมชนนักเรียนเก่าที่แข็งแกร่งกัน ✨",
+        likes: 142,
         isLiked: false,
+        isPinned: true,
+        isReported: false,
+        reportCount: 0,
         comments: [
           CommentModel(
             id: 1001, 
-            user: "Bob Smith", 
-            text: "Great post! Love the colors 🎨", 
-            likes: 3, 
+            user: "Alice Johnson", 
+            text: "ยินดีกับระบบใหม่ค่ะ! �", 
+            likes: 8, 
             isLiked: true,
             replies: [
-              CommentModel(id: 1004, user: "Alice Johnson", text: "Thank you! 😊"),
+              CommentModel(id: 1004, user: "Admin", text: "ขอบคุณมากครับ! 😊"),
             ],
           ),
-          CommentModel(id: 1002, user: "Carol Davis", text: "Amazing work as always!", likes: 1)
+          CommentModel(id: 1002, user: "Bob Smith", text: "รอคอยมานานแล้ว!", likes: 5)
         ],
       ),
       PostModel(
@@ -50,6 +58,9 @@ class FeedController extends GetxController {
         caption: "Just finished this amazing project! 🚀",
         likes: 28,
         isLiked: true,
+        isPinned: false,
+        isReported: false,
+        reportCount: 0,
         comments: [
           CommentModel(id: 1003, user: "David Wilson", text: "This looks incredible! 🔥", likes: 2),
         ],
@@ -62,6 +73,9 @@ class FeedController extends GetxController {
         caption: "Leadership thoughts for today 💭 #leadership",
         likes: 15,
         isLiked: false,
+        isPinned: false,
+        isReported: false,
+        reportCount: 0,
         comments: [
           CommentModel(id: 1005, user: "Emma Brown", text: "Great product insight! 💡", likes: 4),
         ],
@@ -74,6 +88,9 @@ class FeedController extends GetxController {
         caption: "Data speaks louder than words 📊 #analytics",
         likes: 67,
         isLiked: false,
+        isPinned: false,
+        isReported: true,
+        reportCount: 2,
         comments: [
           CommentModel(id: 1006, user: "Alice Johnson", text: "Awesome data visualization! 📊", likes: 5),
         ],
@@ -86,6 +103,9 @@ class FeedController extends GetxController {
         caption: "Marketing strategies that actually work! 🎯 #marketing",
         likes: 34,
         isLiked: true,
+        isPinned: false,
+        isReported: false,
+        reportCount: 0,
         comments: [
           CommentModel(
             id: 1007, 

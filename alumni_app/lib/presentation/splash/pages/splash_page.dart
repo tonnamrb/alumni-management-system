@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:flutter_i18n/flutter_i18n.dart';
@@ -53,37 +54,40 @@ class SplashPage extends GetView<SplashController> {
                 ),
               ),
               
-              const SizedBox(height: 64),
+              const SizedBox(height: 32),
               
-              // Progress Bar
-              Container(
-                width: double.infinity,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-                child: Obx(() => FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: controller.progress.value,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(2),
+              // Simple loading indicator
+              Obx(() => controller.isCheckingAuth.value
+                ? const CircularProgressIndicator(
+                    color: Colors.white,
+                  )
+                : const SizedBox.shrink(),
+              ),
+              
+              const SizedBox(height: 48),
+              
+              // Debug buttons (only in debug mode)
+              if (kDebugMode) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    TextButton(
+                      onPressed: () => Get.toNamed('/login'),
+                      child: const Text(
+                        'Login',
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
-                  ),
-                )),
-              ),
-              
-              const SizedBox(height: 16),
-              
-              // Loading Text
-              Text(
-                FlutterI18n.translate(context, "splash.loading"),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.8),
+                    TextButton(
+                      onPressed: () => Get.toNamed('/api-test'),
+                      child: const Text(
+                        'API Test',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
+              ],
             ],
           ),
         ),

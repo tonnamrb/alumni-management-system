@@ -1,5 +1,5 @@
 ---
-applyTo: 'dart, flutter'
+applyTo: '**/*.dart, **/*.flutter'
 ---
 # 🍏 iOS-like Theme (Light & Dark)
 

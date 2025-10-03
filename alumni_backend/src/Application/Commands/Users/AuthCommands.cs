@@ -45,10 +45,8 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponseDt
                 throw new UnauthorizedAccessException("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
             }
 
-            if (!user.IsActive)
-            {
-                throw new UnauthorizedAccessException("บัญชีผู้ใช้งานถูกปิดการใช้งาน");
-            }
+            // In new schema, all users are active by default (no IsActive field)
+            // Users are only active if they have completed registration (have password)
 
             // ตรวจสอบรหัสผ่าน
             var hashedPassword = HashPassword(request.LoginDto.Password);
@@ -65,10 +63,8 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponseDt
                 throw new UnauthorizedAccessException("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
             }
 
-            // อัพเดต LastLoginAt
-            user.LastLoginAt = DateTime.UtcNow;
-            await _userRepository.UpdateAsync(user, cancellationToken);
-            await _userRepository.SaveChangesAsync(cancellationToken);
+            // In new schema, we don't track LastLoginAt anymore
+            // No need to update user after login
 
             // สร้าง JWT tokens
             var accessToken = await _jwtTokenService.GenerateAccessTokenAsync(user, cancellationToken);

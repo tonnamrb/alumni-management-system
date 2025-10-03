@@ -1,46 +1,73 @@
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:alumni_app/app/routes/app_routes.dart';
+import 'package:alumni_app/core/services/user_session_service.dart';
 
 class SplashController extends GetxController {
-  final RxDouble progress = 0.0.obs;
+  final UserSessionService _sessionService = Get.find<UserSessionService>();
+  
+  final RxBool isCheckingAuth = true.obs;
   
   @override
   void onReady() {
     super.onReady();
-    _startSplashTimer();
+    _checkAuthenticationStatus();
   }
   
-  void _startSplashTimer() {
+  Future<void> _checkAuthenticationStatus() async {
     if (kDebugMode) {
-      debugPrint('🚀 SplashController: Starting splash timer');
+      debugPrint('🔐 SplashController: Checking authentication status...');
     }
     
-    // Simulate loading with progress bar for 5 seconds
-    const totalDuration = 5000; // 5 seconds in milliseconds
-    const updateInterval = 50; // Update every 50ms
-    const increment = updateInterval / totalDuration; // Progress increment per update
+    // แสดง splash ไว้เล็กน้อยเพื่อ UX ที่ดี
+    await Future.delayed(const Duration(milliseconds: 1500));
     
-    // Start the progress animation
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(milliseconds: updateInterval));
-      progress.value += increment;
+    try {
+      // เช็คว่า user login อยู่หรือไม่
+      final isLoggedIn = _sessionService.isLoggedIn;
       
-      if (progress.value >= 1.0) {
-        progress.value = 1.0;
+      if (isLoggedIn) {
+        if (kDebugMode) {
+          debugPrint('✅ SplashController: User is logged in, navigating to home');
+        }
+        
+        // ถ้า login แล้วให้ไปหน้า home
+        _navigateToHome();
+      } else {
+        if (kDebugMode) {
+          debugPrint('❌ SplashController: User not logged in, navigating to auth');
+        }
+        
+        // ถ้ายังไม่ login ให้ไปหน้า auth
         _navigateToAuth();
-        return false; // Stop the loop
       }
-      return true; // Continue the loop
-    });
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('⚠️ SplashController: Error checking auth status: $e');
+      }
+      
+      // กรณีเกิด error ให้ไปหน้า auth
+      _navigateToAuth();
+    } finally {
+      isCheckingAuth.value = false;
+    }
+  }
+  
+  void _navigateToHome() {
+    if (kDebugMode) {
+      debugPrint('🏠 SplashController: Navigating to home');
+    }
+    
+    // Navigate to home page
+    Get.offAllNamed(AppRoutes.home);
   }
   
   void _navigateToAuth() {
     if (kDebugMode) {
-      debugPrint('🚀 SplashController: Navigating to auth');
+      debugPrint('🔐 SplashController: Navigating to auth');
     }
     
-    // Navigate to auth page after splash completes
-    Get.offAllNamed(AppRoutes.auth);
+    // Navigate to login page
+    Get.offAllNamed(AppRoutes.login);
   }
 }

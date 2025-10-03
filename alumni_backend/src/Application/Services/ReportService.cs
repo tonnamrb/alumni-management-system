@@ -92,7 +92,7 @@ public class ReportService : IReportService
                 createdReport.Id, reporterId, createReportDto.Type,
                 createReportDto.PostId ?? createReportDto.CommentId);
 
-            return await MapToReportDtoAsync(createdReport);
+            return MapToReportDto(createdReport);
         }
         catch (Exception ex)
         {
@@ -110,7 +110,7 @@ public class ReportService : IReportService
             var reportDtos = new List<ReportDto>();
             foreach (var report in reports)
             {
-                var dto = await MapToReportDtoAsync(report);
+                var dto = MapToReportDto(report);
                 reportDtos.Add(dto);
             }
 
@@ -140,7 +140,7 @@ public class ReportService : IReportService
             var reportDtos = new List<ReportDto>();
             foreach (var report in reports)
             {
-                var dto = await MapToReportDtoAsync(report);
+                var dto = MapToReportDto(report);
                 reportDtos.Add(dto);
             }
 
@@ -169,7 +169,7 @@ public class ReportService : IReportService
             if (report == null)
                 return null;
 
-            return await MapToReportDtoAsync(report);
+            return MapToReportDto(report);
         }
         catch (Exception ex)
         {
@@ -182,9 +182,9 @@ public class ReportService : IReportService
     {
         try
         {
-            // Check if admin
+            // Check if admin (using new schema)
             var admin = await _userRepository.GetByIdAsync(adminUserId);
-            if (admin?.Role != UserRole.Administrator)
+            if (admin?.RoleId != 2) // RoleId 2 = Administrator
                 throw new UnauthorizedAccessException("Only administrators can resolve reports");
 
             var report = await _reportRepository.GetByIdAsync(reportId);
@@ -205,7 +205,7 @@ public class ReportService : IReportService
             _logger.LogInformation("Report {ReportId} resolved by admin {AdminUserId} with status {Status}", 
                 reportId, adminUserId, resolveReportDto.Status);
 
-            return await MapToReportDtoAsync(report);
+            return MapToReportDto(report);
         }
         catch (Exception ex)
         {
@@ -267,7 +267,7 @@ public class ReportService : IReportService
         }
     }
 
-    private async Task<ReportDto> MapToReportDtoAsync(Report report)
+    private ReportDto MapToReportDto(Report report)
     {
         var reporterDto = _mapper.Map<UserDto>(report.Reporter);
         var resolvedByUserDto = report.ResolvedByUser != null ? _mapper.Map<UserDto>(report.ResolvedByUser) : null;
@@ -278,12 +278,12 @@ public class ReportService : IReportService
         if (report.Post != null)
         {
             reportedContent = report.Post.Content;
-            reportedUserName = report.Post.User?.Name;
+            reportedUserName = report.Post.User?.FullName;
         }
         else if (report.Comment != null)
         {
             reportedContent = report.Comment.Content;
-            reportedUserName = report.Comment.User?.Name;
+            reportedUserName = report.Comment.User?.FullName;
         }
 
         return new ReportDto

@@ -134,7 +134,7 @@ public class GetUsersPaginatedQueryHandler : IRequestHandler<GetUsersPaginatedQu
             var (users, totalCount) = await _userRepository.GetPagedAsync(
                 request.Page,
                 request.PageSize,
-                predicate: u => u.IsActive,
+                predicate: u => true, // Remove IsActive check since it's removed from schema
                 orderBy: u => u.CreatedAt,
                 ascending: false,
                 cancellationToken: cancellationToken);

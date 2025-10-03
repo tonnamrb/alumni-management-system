@@ -129,7 +129,7 @@ public class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand, UserD
             // เก็บข้อมูลเดิมสำหรับ audit log
             var oldUserData = new
             {
-                existingUser.Name,
+                existingUser.FullName,
                 existingUser.Email
             };
 
@@ -145,7 +145,7 @@ public class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand, UserD
                 "User",
                 request.UserId,
                 oldUserData,
-                new { updatedUser.Name, updatedUser.Email },
+                new { updatedUser.FullName, updatedUser.Email },
                 cancellationToken: cancellationToken);
 
             _logger.LogInformation("Updated user with ID: {UserId}", request.UserId);
@@ -193,9 +193,9 @@ public class DeleteUserCommandHandler : IRequestHandler<DeleteUserCommand, bool>
             var userData = new
             {
                 user.Id,
-                user.Name,
+                user.FullName,
                 user.Email,
-                user.Role
+                user.RoleId
             };
 
             await _userRepository.DeleteAsync(user, cancellationToken);

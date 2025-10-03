@@ -465,11 +465,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "d:\\fusionware\\use_project\\alumni_v1\\alumni_backend\\src\\Application\\Application.csproj",
+      "projectUniqueName": "D:\\fusionware\\use_project\\alumni_v1\\alumni_backend\\src\\Application\\Application.csproj",
       "projectName": "Application",
-      "projectPath": "d:\\fusionware\\use_project\\alumni_v1\\alumni_backend\\src\\Application\\Application.csproj",
+      "projectPath": "D:\\fusionware\\use_project\\alumni_v1\\alumni_backend\\src\\Application\\Application.csproj",
       "packagesPath": "C:\\Users\\kitti\\.nuget\\packages\\",
-      "outputPath": "d:\\fusionware\\use_project\\alumni_v1\\alumni_backend\\src\\Application\\obj\\",
+      "outputPath": "D:\\fusionware\\use_project\\alumni_v1\\alumni_backend\\src\\Application\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

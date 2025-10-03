@@ -1,5 +1,5 @@
 ---
-applyTo: 'dart, flutter'
+applyTo: '**/*.dart, **/*.flutter'
 ---
 - บังคับโครงสร้างนี้กับโปรเจกต์ Flutter/Dart ทุกครั้งที่มีการ prompt
 - ทุกครั้งที่มีการ prompt ให้ทำ todoli- แยก service ที่เป็น cross-feature (session/deeplink/analytics) ไว้ core/services/

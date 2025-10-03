@@ -8,6 +8,7 @@ D:\fusionware\use_project\alumni_v1\alumni_backend\src\Application\obj\Debug\net
 D:\fusionware\use_project\alumni_v1\alumni_backend\src\Application\obj\Debug\net8.0\Application.AssemblyInfoInputs.cache
 D:\fusionware\use_project\alumni_v1\alumni_backend\src\Application\obj\Debug\net8.0\Application.AssemblyInfo.cs
 D:\fusionware\use_project\alumni_v1\alumni_backend\src\Application\obj\Debug\net8.0\Application.csproj.CoreCompileInputs.cache
+D:\fusionware\use_project\alumni_v1\alumni_backend\src\Application\obj\Debug\net8.0\Application.sourcelink.json
 D:\fusionware\use_project\alumni_v1\alumni_backend\src\Application\obj\Debug\net8.0\Applicat.44B5EDA2.Up2Date
 D:\fusionware\use_project\alumni_v1\alumni_backend\src\Application\obj\Debug\net8.0\Application.dll
 D:\fusionware\use_project\alumni_v1\alumni_backend\src\Application\obj\Debug\net8.0\refint\Application.dll

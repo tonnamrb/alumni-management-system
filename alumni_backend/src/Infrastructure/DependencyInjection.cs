@@ -18,10 +18,24 @@ public static class DependencyInjection
         this IServiceCollection services, 
         IConfiguration configuration)
     {
-        // Database Context - Using InMemory for demo
+        // Database Context - Using InMemory for development (PostgreSQL for production)
+        var usePostgreSQLValue = configuration.GetSection("Database:UsePostgreSQL").Value;
+        var usePostgreSQL = string.Equals(usePostgreSQLValue, "true", StringComparison.OrdinalIgnoreCase);
+        
+        Console.WriteLine($"🔍 Database config debug:");
+        Console.WriteLine($"   UsePostgreSQL value: '{usePostgreSQLValue}'");
+        Console.WriteLine($"   UsePostgreSQL bool: {usePostgreSQL}");
+        
         services.AddDbContext<AppDbContext>(options =>
         {
-            options.UseInMemoryDatabase("AlumniDemoDb");
+            if (usePostgreSQL)
+            {
+                options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"));
+            }
+            else
+            {
+                options.UseInMemoryDatabase("AlumniDemoDb");
+            }
             
             // Enable sensitive data logging in development
             if (configuration.GetSection("Logging:IncludeScopes").Value == "true")
@@ -40,6 +54,7 @@ public static class DependencyInjection
         services.AddScoped<ILikeRepository, LikeRepository>();
         services.AddScoped<IReportRepository, ReportRepository>();
         services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+        services.AddScoped<IOtpRepository, OtpRepository>();
         
         // Register External Services
         services.AddScoped<IImageStorageService, AwsS3ImageStorageService>();
@@ -51,6 +66,7 @@ public static class DependencyInjection
         // Register Business Services
         services.AddScoped<IPostService, PostService>();
         services.AddScoped<ICommentService, CommentService>();
+        // Note: IOtpService is registered in Application layer
 
         // Register AWS S3 Client
         services.AddDefaultAWSOptions(configuration.GetAWSOptions());

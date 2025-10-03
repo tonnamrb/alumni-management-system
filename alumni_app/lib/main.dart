@@ -9,6 +9,7 @@ import 'package:alumni_app/core/theme/app_theme.dart';
 import 'package:alumni_app/core/services/theme_service.dart';
 import 'package:alumni_app/core/services/locale_service.dart';
 
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
